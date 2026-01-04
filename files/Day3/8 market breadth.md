@@ -149,3 +149,16 @@ Market breadth analysis is an advanced technique for assessing overall market he
 ## Conclusion
 
 Market breadth analysis is a powerful tool for advanced traders seeking to identify high-probability trading opportunities. By systematically monitoring breadth indicators, recognizing extreme readings, and studying historical patterns, traders can gain valuable insights into market health and timing. However, breadth analysis should always be used in conjunction with other forms of analysis and proper risk management.
+
+
+### Market Breadth Columns
+- Too many SOLID greens together is NOT good & vice versa
+0. Zero Column: Date
+1. First Column: Number of Stocks up 4.5% Today
+2. Second: Number of stocks down 4.5% Today
+3. Third: Number of stocks up 20%+ in 5 days
+4. Fourth: Number of stocks down 20% in 5 days
+5. Number of stocks above 20 DMA (Early Signals) 
+6. Number of stocks below 20 DMA (Early Signals)
+7. Number of stocks above 50 DMA
+8. Number of stocks below 50 DMA
