@@ -1,0 +1,41 @@
+{
+  "scanner": {
+    "continuation": {
+      "max_distance_from_high": 0.05,
+      "min_ma_angle": 0.0,
+      "min_volume_days": 1,
+      "volume_threshold": 1000000,
+      "min_adr": 0.03,
+      "price_min": 100,
+      "price_max": 2000,
+      "consolidation_days": [3, 7]
+    },
+    "reversal": {
+      "decline_days": [4, 7],
+      "min_decline_percent": 0.10,
+      "min_volume_days": 1,
+      "volume_threshold": 1000000,
+      "min_adr": 0.03,
+      "price_min": 100,
+      "price_max": 2000
+    }
+  },
+  "trading": {
+    "risk_per_trade": 0.005,
+    "max_drawdown": 0.05,
+    "profit_target": 0.15,
+    "time_exit_days": 3,
+    "stop_loss_max": 0.04
+  },
+  "data": {
+    "source": "yfinance",
+    "cache_days": 200,
+    "update_frequency": "daily"
+  },
+  "gui": {
+    "theme": "light",
+    "font_size": 12,
+    "auto_refresh": true,
+    "refresh_interval": 60
+  }
+}
