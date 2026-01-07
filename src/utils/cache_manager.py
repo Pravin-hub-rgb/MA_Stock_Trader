@@ -52,7 +52,12 @@ class CacheManager:
         """Get last update date for symbol"""
         data = self.load_cached_data(symbol)
         if data is not None and not data.empty:
-            return data['date'].iloc[-1]
+            # Date is the index in Upstox data format
+            last_date = data.index[-1]
+            if hasattr(last_date, 'date'):  # If it's a Timestamp
+                return last_date.date()
+            else:  # If it's already a date
+                return last_date
         return None
     
     def needs_update(self, symbol: str, days_back: int = 3) -> bool:
@@ -69,27 +74,90 @@ class CacheManager:
         """Update cache with new data"""
         # Load existing data
         existing_data = self.load_cached_data(symbol)
-        
+
         if existing_data is not None and not existing_data.empty:
             # Combine existing and new data
             combined_data = pd.concat([existing_data, new_data])
+            # Reset index to work with date column
+            combined_data = combined_data.reset_index()
             # Remove duplicates and sort by date
             combined_data = combined_data.drop_duplicates(subset=['date']).sort_values('date')
+            # Set date back as index
+            combined_data = combined_data.set_index('date')
         else:
             # No existing data, use new data
             combined_data = new_data
-        
+
+        # Add update timestamp
+        combined_data['last_updated'] = pd.Timestamp.now()
+
         # Save updated data
         self.save_cached_data(symbol, combined_data)
     
-    def get_data_for_date_range(self, symbol: str, start_date: date, end_date: date) -> pd.DataFrame:
+    def update_with_bhavcopy(self, symbol: str, bhavcopy_data: pd.DataFrame):
+        """Update existing cache with latest bhavcopy data"""
+        existing_data = self.load_cached_data(symbol)
+
+        try:
+            if existing_data is not None and not existing_data.empty:
+                # Ensure both DataFrames have compatible date indexing
+                if not isinstance(existing_data.index, pd.DatetimeIndex):
+                    # Convert existing data to DatetimeIndex if needed
+                    existing_data.index = pd.to_datetime(existing_data.index)
+
+                if not isinstance(bhavcopy_data.index, pd.DatetimeIndex):
+                    # Convert bhavcopy data to DatetimeIndex if needed
+                    bhavcopy_data.index = pd.to_datetime(bhavcopy_data.index)
+
+                # Combine existing with new data
+                combined = pd.concat([existing_data, bhavcopy_data])
+
+                # Remove duplicates based on date index (keep last/latest)
+                combined = combined[~combined.index.duplicated(keep='last')]
+
+                # Sort by date index
+                combined = combined.sort_index()
+            else:
+                combined = bhavcopy_data
+
+            # Ensure we have a proper DatetimeIndex
+            if not isinstance(combined.index, pd.DatetimeIndex):
+                combined.index = pd.to_datetime(combined.index)
+
+            # Add technical indicators (recalculate for updated data)
+            from src.utils.data_fetcher import data_fetcher
+            combined = data_fetcher.calculate_technical_indicators(combined)
+
+            # Save updated cache
+            self.save_cached_data(symbol, combined)
+            logger.info(f"Updated {symbol} cache with bhavcopy data: {len(combined)} total days")
+
+        except Exception as e:
+            logger.error(f"Error updating {symbol} cache with bhavcopy data: {e}")
+            # Don't raise - allow partial success
+            raise
+
+    def get_data_for_date_range(self, symbol: str, start_date: Optional[date], end_date: date) -> pd.DataFrame:
         """Get data for specific date range from cache"""
         cached_data = self.load_cached_data(symbol)
         if cached_data is None or cached_data.empty:
             return pd.DataFrame()
-        
+
+        # Ensure index is DatetimeIndex for proper comparison
+        if not isinstance(cached_data.index, pd.DatetimeIndex):
+            cached_data.index = pd.to_datetime(cached_data.index)
+
         # Filter for date range
-        mask = (cached_data['date'] >= start_date) & (cached_data['date'] <= end_date)
+        if start_date is None:
+            # Return all data up to end_date
+            end_ts = pd.Timestamp(end_date)
+            mask = cached_data.index <= end_ts
+        else:
+            # Filter between start_date and end_date
+            start_ts = pd.Timestamp(start_date)
+            end_ts = pd.Timestamp(end_date)
+            mask = (cached_data.index >= start_ts) & (cached_data.index <= end_ts)
+
         return cached_data[mask].copy()
 
 # Global cache manager instance

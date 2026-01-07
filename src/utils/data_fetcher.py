@@ -14,18 +14,21 @@ from pathlib import Path
 import io
 
 from src.utils.cache_manager import cache_manager
+from src.utils.upstox_fetcher import upstox_fetcher
+from src.utils.nse_fetcher import nse_bhavcopy_fetcher
 
 logger = logging.getLogger(__name__)
 
 
 class DataFetcher:
     """Handles data fetching from various sources"""
-    
+
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+        self.upstox_fetcher = upstox_fetcher
     
     def fetch_nse_stocks(self) -> List[Dict]:
         """
@@ -61,24 +64,29 @@ class DataFetcher:
             return []
     
     def fetch_historical_data(
-        self, 
-        symbol: str, 
-        start_date: str, 
+        self,
+        symbol: str,
+        start_date: str,
         end_date: str,
-        source: str = 'yfinance'
+        source: str = 'upstox'
     ) -> pd.DataFrame:
         """
         Fetch historical data for given symbol
         Returns pandas DataFrame with OHLCV data
         """
         try:
-            if source == 'yfinance':
+            if source == 'upstox':
+                # Convert string dates to date objects
+                start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                return self.upstox_fetcher.fetch_historical_data(symbol, start, end)
+            elif source == 'yfinance':
                 return self._fetch_yfinance_data(symbol, start_date, end_date)
             elif source == 'nsepy':
                 return self._fetch_nsepy_data(symbol, start_date, end_date)
             else:
                 raise ValueError(f"Unsupported data source: {source}")
-                
+
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {e}")
             return pd.DataFrame()
@@ -337,7 +345,7 @@ class DataFetcher:
             
             return {
                 'symbol': symbol,
-                'date': latest['date'],
+                'date': latest.name,  # Date is the index in Upstox data
                 'open': latest['open'],
                 'high': latest['high'],
                 'low': latest['low'],
@@ -374,12 +382,15 @@ class DataFetcher:
         """
         try:
             logger.info(f"Starting market data preparation for last {days_back} days")
+            logger.info("📡 Fetching NSE stocks list...")
 
             # Get NSE stocks list
             nse_stocks = self.fetch_nse_stocks()
             if not nse_stocks:
-                logger.error("Failed to fetch NSE stocks list")
+                logger.error("❌ Failed to fetch NSE stocks list")
                 return {'error': 'Failed to fetch NSE stocks'}
+
+            logger.info(f"✅ Found {len(nse_stocks)} NSE stocks")
 
             # Limit number of stocks to process
             stocks_to_process = nse_stocks[:max_stocks]
@@ -410,13 +421,16 @@ class DataFetcher:
                     end_date = datetime.now().strftime('%Y-%m-%d')
                     start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
 
+                    logger.info(f"📥 Downloading {days_back} days data for {symbol} ({start_date} to {end_date})")
                     data = self.fetch_historical_data(symbol, start_date, end_date)
                     if data.empty:
+                        logger.warning(f"❌ No data received for {symbol}")
                         summary['errors'] += 1
                         continue
 
                     # Update cache
                     cache_manager.update_cache(symbol, data)
+                    logger.info(f"✅ Cached {len(data)} days data for {symbol}")
                     summary['updated'] += 1
                     summary['total_days_added'] += len(data)
 
@@ -430,6 +444,52 @@ class DataFetcher:
 
         except Exception as e:
             logger.error(f"Error in market data preparation: {e}")
+            return {'error': str(e)}
+
+    def update_daily_bhavcopy(self, target_date=None) -> Dict[str, int]:
+        """
+        Update cache with latest bhavcopy data (same-day EOD)
+        Call this after 6 PM to get today's complete data
+        """
+        try:
+            logger.info("Updating daily bhavcopy data...")
+
+            # Get bhavcopy for specific date or latest
+            if target_date:
+                bhavcopy_df = nse_bhavcopy_fetcher.download_bhavcopy(target_date)
+            else:
+                bhavcopy_df = nse_bhavcopy_fetcher.get_latest_bhavcopy()
+
+            if bhavcopy_df is None or bhavcopy_df.empty:
+                return {'error': 'No bhavcopy data available'}
+
+            summary = {
+                'total_stocks': len(bhavcopy_df['symbol'].unique()),
+                'updated': 0,
+                'errors': 0
+            }
+
+            # Update each stock's cache with today's data
+            for symbol in bhavcopy_df['symbol'].unique():
+                try:
+                    stock_data = nse_bhavcopy_fetcher.get_stock_from_bhavcopy(symbol, bhavcopy_df)
+                    if not stock_data.empty:
+                        # Update existing cache
+                        cache_manager.update_with_bhavcopy(symbol, stock_data)
+                        summary['updated'] += 1
+                    else:
+                        summary['errors'] += 1
+
+                except Exception as e:
+                    logger.error(f"Error updating {symbol} with bhavcopy data: {e}")
+                    summary['errors'] += 1
+                    continue
+
+            logger.info(f"Daily bhavcopy update completed: {summary}")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error in daily bhavcopy update: {e}")
             return {'error': str(e)}
 
 

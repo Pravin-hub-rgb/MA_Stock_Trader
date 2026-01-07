@@ -57,17 +57,17 @@ class FilterEngine:
             return False
 
     def check_rising_ma(self, data: pd.DataFrame, latest: pd.Series) -> bool:
-        """Check if 20-day MA is rising"""
+        """Check if 20-day MA is rising (current > max of previous 5 days)"""
         try:
-            if len(data) < 20:
-                logger.info(f"Not enough data for MA comparison (need 20 days, got {len(data)})")
+            if len(data) < 25:  # Need 20 + 5 buffer
+                logger.info(f"Not enough data for MA comparison (need 25 days, got {len(data)})")
                 return False
 
             current_ma = latest['ma_20']
-            ma_7_days_ago = data.iloc[-7]['ma_20']
+            ma_prev_max = data.iloc[-6:-1]['ma_20'].max()  # Max of prev 5 days (excluding current)
 
-            if current_ma <= ma_7_days_ago:
-                logger.info(f"MA not rising (Current: {current_ma:.2f}, 7 days ago: {ma_7_days_ago:.2f})")
+            if current_ma <= ma_prev_max:
+                logger.info(f"MA not rising (Current: {current_ma:.2f}, prev 5 max: {ma_prev_max:.2f})")
                 return False
 
             return True

@@ -21,118 +21,60 @@ class ReversalAnalyzer:
         self.filter_engine = filter_engine
         self.reversal_params = reversal_params
 
-    def analyze_reversal_setup(self, symbol: str, scan_date: date) -> Optional[Dict]:
-        """Analyze stock for reversal setup"""
+    def analyze_reversal_setup(self, symbol: str, scan_date: date, data: pd.DataFrame) -> Optional[Dict]:
+        """Analyze stock for reversal setup (extended decline pattern, assumes data is pre-fetched)"""
         try:
-            # Get historical data
-            end_date = scan_date.strftime('%Y-%m-%d')
-            start_date = (scan_date - timedelta(days=30)).strftime('%Y-%m-%d')
-
-            data = data_fetcher.fetch_historical_data(symbol, start_date, end_date)
-
-            if data.empty:
-                return None
-
-            # Calculate technical indicators
-            data = data_fetcher.calculate_technical_indicators(data)
-
-            # Get latest data
+            # Data is already provided and filtered
             latest = data.iloc[-1]
 
-            # Check base filters
-            if not self.filter_engine.check_base_filters(latest, 'reversal'):
+            # Check extended decline pattern
+            if not self._check_extended_decline(data, symbol):
                 return None
 
-            # Calculate score
-            score = 0
-            notes = []
-
-            # Check 1: Extended decline
-            decline_score, decline_notes = self._check_extended_decline(data)
-            score += decline_score
-            notes.extend(decline_notes)
-
-            # Check 2: Volume confirmation
-            if self.filter_engine.check_volume_confirmation(data, 'reversal'):
-                score += 25
-                notes.append("Volume confirmation present")
-            else:
-                notes.append("Volume confirmation missing")
-
-            # Check 3: Oversold condition
-            oversold_score, oversold_notes = self._check_oversold_condition(data)
-            score += oversold_score
-            notes.extend(oversold_notes)
-
-            # Check 4: ADR requirement
-            if latest['adr_percent'] >= self.reversal_params['min_adr'] * 100:
-                score += 25
-                notes.append(f"ADR {latest['adr_percent']:.1f}% meets requirement")
-            else:
-                notes.append(f"ADR {latest['adr_percent']:.1f}% too low")
-
-            # Insert stock if not exists
-            stock_id = db.get_stock_id(symbol)
-            if stock_id is None:
-                # Try to get name from symbol or use symbol itself
-                name = symbol  # Use symbol as name for now
-                stock_id = db.insert_stock(symbol, name=name)
-
+            # All checks passed - return candidate
             return {
-                'stock_id': stock_id,
                 'symbol': symbol,
-                'score': score,
-                'notes': '; '.join(notes),
+                'close': latest['close'],
                 'decline_days': self._get_decline_days(data),
                 'decline_percent': self._get_decline_percent(data),
-                'volume_confirmation': self.filter_engine.check_volume_confirmation(data, 'reversal'),
-                'oversold': self._check_oversold_condition(data)[0] > 0
+                'adr_percent': latest['adr_percent']
             }
 
         except Exception as e:
             logger.error(f"Error analyzing reversal setup for {symbol}: {e}")
             return None
 
-    def _check_extended_decline(self, data: pd.DataFrame) -> Tuple[int, List[str]]:
-        """Check for extended decline (4-7 days)"""
+    def _check_extended_decline(self, data: pd.DataFrame, symbol: str = "") -> bool:
+        """Check for extended decline (3-8 consecutive red days with >=10% drop)"""
         try:
-            score = 0
-            notes = []
-
             # Get recent data
             recent_data = data.tail(15)
 
-            # Count consecutive down days
-            down_days = 0
-            for i in range(len(recent_data) - 1, 0, -1):
-                if recent_data.iloc[i]['close'] < recent_data.iloc[i-1]['close']:
-                    down_days += 1
+            # Count consecutive red candles (close < open)
+            red_days = 0
+            for i in range(len(recent_data) - 1, -1, -1):
+                if recent_data.iloc[i]['close'] < recent_data.iloc[i]['open']:
+                    red_days += 1
                 else:
                     break
 
             min_days, max_days = self.reversal_params['decline_days']
             min_decline = self.reversal_params['min_decline_percent']
 
-            if min_days <= down_days <= max_days:
-                # Check decline percentage
-                start_price = recent_data.iloc[-down_days]['close']
+            if min_days <= red_days <= max_days:
+                # Check decline percentage: first open to last close over the red candle period
+                start_price = recent_data.iloc[-red_days]['open']
                 end_price = recent_data.iloc[-1]['close']
                 decline_percent = (start_price - end_price) / start_price
 
                 if decline_percent >= min_decline:
-                    score = 50
-                    notes.append(f"Extended decline: {down_days} days, {decline_percent*100:.1f}%")
-                else:
-                    score = 25
-                    notes.append(f"Decline too small: {decline_percent*100:.1f}% < {min_decline*100:.1f}%")
-            else:
-                notes.append(f"Wrong decline duration: {down_days} days")
+                    return True
 
-            return score, notes
+            return False
 
         except Exception as e:
             logger.error(f"Error checking extended decline: {e}")
-            return 0, ["Error checking decline"]
+            return False
 
     def _check_oversold_condition(self, data: pd.DataFrame) -> Tuple[int, List[str]]:
         """Check for oversold conditions"""
@@ -161,28 +103,28 @@ class ReversalAnalyzer:
             return 0, ["Error checking oversold"]
 
     def _get_decline_days(self, data: pd.DataFrame) -> int:
-        """Get number of consecutive decline days"""
+        """Get number of consecutive red candles"""
         try:
             recent_data = data.tail(15)
-            down_days = 0
-            for i in range(len(recent_data) - 1, 0, -1):
-                if recent_data.iloc[i]['close'] < recent_data.iloc[i-1]['close']:
-                    down_days += 1
+            red_days = 0
+            for i in range(len(recent_data) - 1, -1, -1):
+                if recent_data.iloc[i]['close'] < recent_data.iloc[i]['open']:
+                    red_days += 1
                 else:
                     break
-            return down_days
+            return red_days
         except:
             return 0
 
     def _get_decline_percent(self, data: pd.DataFrame) -> float:
-        """Get percentage decline over recent period"""
+        """Get percentage decline over recent period (first open to last close)"""
         try:
             recent_data = data.tail(15)
             down_days = self._get_decline_days(data)
             if down_days < 2:
                 return 0
 
-            start_price = recent_data.iloc[-down_days]['close']
+            start_price = recent_data.iloc[-down_days]['open']
             end_price = recent_data.iloc[-1]['close']
             return (start_price - end_price) / start_price
         except:

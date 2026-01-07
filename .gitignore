@@ -51,9 +51,7 @@ coverage.xml
 .hypothesis/
 
 # Data and cache files
-data/cache/*.pkl
-data/stocks.db
-data/stocks.db-*
+data/
 
 # Temporary files
 *.tmp
@@ -91,3 +89,6 @@ docs/prompts.md
 test_*.py
 debug_*.py
 *_debug.py
+
+# API credentials
+upstox_config.json

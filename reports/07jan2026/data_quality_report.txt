@@ -1,0 +1,33 @@
+DATA QUALITY REPORT - 07-Jan-2026
+============================================================
+
+📊 CACHE QUALITY SUMMARY:
+   Total Stocks: 2,084
+   Complete Data (120+ days): 1,966 (94.3%)
+   Good Data (60-119 days): 74 (3.6%)
+   Limited Data (<60 days): 24 (1.2%)
+   Very Limited (<30 days): 20 (1.0%)
+
+⚠️  STOCKS WITH LIMITED DATA (<60 days):
+   ALGOQUANT: 2 days
+   GKSL: 7 days
+   KSHINTL: 11 days
+   ICICIAMC: 13 days
+   RUDRA: 13 days
+   VIVIMEDLAB: 14 days
+   NEPHROPLUS: 15 days
+   PARKHOSPS: 15 days
+   CORONA: 17 days
+   WAKEFIT: 17 days
+   MODINATUR: 19 days
+   AEQUS: 20 days
+   MEESHO: 20 days
+   VIDYAWIRES: 20 days
+   AARTISURF: 22 days
+   SKFINDUS: 23 days
+   JAYKAY: 25 days
+   PAUSHAKLTD: 27 days
+   SUDEEPPHRM: 28 days
+   KSR: 29 days
+
+💡 Consider refreshing data for these stocks if needed.

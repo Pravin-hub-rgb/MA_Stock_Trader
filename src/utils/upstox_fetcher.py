@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""
+Upstox Data Fetcher for MA Stock Trader
+Handles historical EOD data fetching from Upstox API
+"""
+
+import json
+import os
+import logging
+import time
+from datetime import datetime, timedelta, date
+from typing import Optional, Dict, List, Tuple
+import pandas as pd
+import requests
+import gzip
+
+logger = logging.getLogger(__name__)
+
+class UpstoxFetcher:
+    """Handles data fetching from Upstox API"""
+
+    def __init__(self, config_file: str = 'upstox_config.json'):
+        self.config_file = config_file
+        self.api = None
+        self.instrument_mapping = {}
+        self._load_config()
+        self._load_instrument_mapping()
+        self._initialize_client()
+
+    def _load_config(self):
+        """Load Upstox API credentials"""
+        if not os.path.exists(self.config_file):
+            raise FileNotFoundError(f"Config file {self.config_file} not found. Please create it with your Upstox API credentials.")
+
+        with open(self.config_file, 'r') as f:
+            config = json.load(f)
+
+        self.api_key = config.get('api_key')
+        self.access_token = config.get('access_token')
+        self.api_secret = config.get('api_secret')
+
+        if not all([self.api_key, self.access_token]):
+            raise ValueError("API key and access token are required in config file")
+
+    def _load_instrument_mapping(self):
+        """Load instrument key mapping from Upstox master file"""
+        master_file = 'complete.csv.gz'
+
+        if not os.path.exists(master_file):
+            logger.warning(f"Master file {master_file} not found. Using fallback key format.")
+            return
+
+        try:
+            logger.info("Loading instrument mapping from master file...")
+
+            # Read compressed CSV directly
+            with gzip.open(master_file, 'rt', encoding='utf-8') as f:
+                df = pd.read_csv(f)
+
+            # Filter only NSE equities
+            nse_eq = df[df['exchange'] == 'NSE_EQ']
+
+            # Create mapping: tradingsymbol → instrument_key
+            self.instrument_mapping = dict(zip(nse_eq['tradingsymbol'], nse_eq['instrument_key']))
+
+            logger.info(f"Loaded {len(self.instrument_mapping)} NSE equity instrument mappings")
+
+        except Exception as e:
+            logger.error(f"Error loading instrument mapping: {e}")
+            self.instrument_mapping = {}
+
+    def _initialize_client(self):
+        """Initialize Upstox API client"""
+        try:
+            from upstox_client import ApiClient, Configuration
+            from upstox_client.api import UserApi, HistoryApi
+
+            # Configure API client
+            configuration = Configuration()
+            configuration.access_token = self.access_token
+
+            self.api_client = ApiClient(configuration)
+            self.user_api = UserApi(self.api_client)
+            self.history_api = HistoryApi(self.api_client)
+
+            # Test connection
+            profile_response = self.user_api.get_profile(api_version='2.0')
+            logger.info("Upstox API connected successfully")
+            logger.info(f"User: {profile_response.data.email}")
+
+        except ImportError:
+            raise ImportError("upstox-python-sdk not installed. Run: pip install upstox-python-sdk")
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to Upstox API: {e}")
+
+    def get_instrument_key(self, symbol: str) -> Optional[str]:
+        """Convert NSE symbol to Upstox instrument key using master file mapping"""
+
+        # Manual mappings for known problem stocks (safe addition)
+        MANUAL_MAPPINGS = {
+            'CHOLAFIN': 'NSE_EQ|INE121A01024',
+            'ANURAS': 'NSE_EQ|INE930P01018'
+        }
+
+        # Check manual mappings first (for known issues)
+        if symbol.upper() in MANUAL_MAPPINGS:
+            return MANUAL_MAPPINGS[symbol.upper()]
+
+        # Try to get from master file mapping
+        if self.instrument_mapping and symbol.upper() in self.instrument_mapping:
+            return self.instrument_mapping[symbol.upper()]
+
+        # Fallback to old format if mapping not available
+        logger.warning(f"No mapping found for {symbol}, using fallback format")
+        return f"NSE_EQ|{symbol}"
+
+    def _split_date_range(self, start_date: date, end_date: date, chunk_days: int = 60) -> List[Tuple[date, date]]:
+        """Split date range into chunks for API calls"""
+        chunks = []
+        current = start_date
+        while current < end_date:
+            chunk_end = min(current + timedelta(days=chunk_days), end_date)
+            chunks.append((current, chunk_end))
+            current = chunk_end + timedelta(days=1)  # Next day
+        return chunks
+
+    def _fetch_single_chunk(self, instrument_key: str, start_date: date, end_date: date) -> pd.DataFrame:
+        """Fetch a single chunk of historical data"""
+        try:
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+
+            # Get historical candle data (without from_date since it's not supported)
+            response = self.history_api.get_historical_candle_data(
+                instrument_key=instrument_key,
+                interval='day',
+                to_date=end_str,
+                api_version='2.0'
+            )
+
+            # Access response data correctly
+            if hasattr(response, 'data') and hasattr(response.data, 'candles'):
+                candles = response.data.candles
+
+                if not candles:
+                    return pd.DataFrame()
+
+                # Create DataFrame
+                df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi'])
+
+                # Convert timestamp to date
+                df['date'] = pd.to_datetime(df['timestamp']).dt.date
+                df = df.drop('timestamp', axis=1)
+
+                # Reorder columns
+                df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+
+                # Set date as index
+                df.set_index('date', inplace=True)
+
+                # Filter to requested chunk range
+                df = df[(df.index >= start_date) & (df.index <= end_date)]
+
+                return df
+            else:
+                return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error fetching chunk {start_str} to {end_str}: {e}")
+            return pd.DataFrame()
+
+    def fetch_historical_data(self, symbol: str, start_date: date, end_date: date) -> pd.DataFrame:
+        """
+        Fetch complete historical EOD data from Upstox using chunked requests
+        Returns DataFrame with OHLCV data
+        """
+        try:
+            instrument_key = self.get_instrument_key(symbol)
+            if not instrument_key:
+                logger.error(f"No instrument key found for {symbol}")
+                return pd.DataFrame()
+
+            # Split date range into manageable chunks
+            chunks = self._split_date_range(start_date, end_date, chunk_days=60)
+            all_dfs = []
+
+            logger.info(f"Fetching {len(chunks)} chunks for {symbol} ({start_date} to {end_date})")
+
+            for chunk_start, chunk_end in chunks:
+                chunk_df = self._fetch_single_chunk(instrument_key, chunk_start, chunk_end)
+
+                if not chunk_df.empty:
+                    all_dfs.append(chunk_df)
+                    logger.info(f"Fetched chunk: {chunk_start} to {chunk_end} ({len(chunk_df)} days)")
+
+                # Polite delay between requests
+                if len(chunks) > 1:
+                    time.sleep(0.7)
+
+            if not all_dfs:
+                logger.warning(f"No data fetched for {symbol}")
+                return pd.DataFrame()
+
+            # Combine all chunks
+            full_df = pd.concat(all_dfs).sort_index().drop_duplicates()
+
+            # Filter to exact requested range
+            full_df = full_df[(full_df.index >= start_date) & (full_df.index <= end_date)]
+
+            logger.info(f"Complete history for {symbol}: {len(full_df)} days from {start_date} to {end_date}")
+            return full_df
+
+        except Exception as e:
+            logger.error(f"Error in complete fetch for {symbol}: {e}")
+            return pd.DataFrame()
+
+    def get_latest_data(self, symbol: str) -> Dict:
+        """
+        Get latest available data for a symbol
+        Returns dict with current market data
+        """
+        try:
+            # Get last 7 days to ensure we have the latest
+            end_date = date.today()
+            start_date = end_date - timedelta(days=7)
+
+            df = self.fetch_historical_data(symbol, start_date, end_date)
+
+            if df.empty:
+                return {}
+
+            # Get the most recent data
+            latest = df.iloc[-1]
+
+            return {
+                'symbol': symbol,
+                'date': latest.name,  # date index
+                'open': latest['open'],
+                'high': latest['high'],
+                'low': latest['low'],
+                'close': latest['close'],
+                'volume': latest['volume']
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting latest data for {symbol}: {e}")
+            return {}
+
+# Global instance
+upstox_fetcher = UpstoxFetcher()

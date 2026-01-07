@@ -1,0 +1,21 @@
+{
+  "incomplete_stocks": [
+    {
+      "symbol": "AARTISURF"
+    },
+    {
+      "symbol": "ALGOQUANT"
+    },
+    {
+      "symbol": "ANURAS"
+    },
+    {
+      "symbol": "CHOLAFIN"
+    },
+    {
+      "symbol": "NIRAJISPAT"
+    }
+  ],
+  "last_updated": "2026-01-07T10:11:17.656362",
+  "target_date": "2026-01-05"
+}

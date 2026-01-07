@@ -8,10 +8,10 @@ import logging
 from datetime import date, datetime
 from typing import List, Dict
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem, QComboBox,
     QDateEdit, QCheckBox, QGroupBox, QSplitter, QTextEdit, QMessageBox,
-    QFileDialog, QProgressBar
+    QFileDialog, QProgressBar, QSpinBox, QFormLayout
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -25,25 +25,25 @@ logger = logging.getLogger(__name__)
 class ScanWorker(QThread):
     """Worker thread for running scans"""
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(list, str)
-    
+    finished = pyqtSignal(str, list, str)  # scan_type, results, message
+
     def __init__(self, scan_type: str, scan_date: date):
         super().__init__()
         self.scan_type = scan_type
         self.scan_date = scan_date
-    
+
     def run(self):
         """Run the scan in background"""
         try:
             if self.scan_type == 'continuation':
-                results = scanner.run_continuation_scan(self.scan_date)
-                self.finished.emit(results, "Continuation scan completed")
+                results = scanner.run_continuation_scan(self.scan_date, lambda value, message: self.progress.emit(value, message))
+                self.finished.emit(self.scan_type, results, "Continuation scan completed")
             else:
-                results = scanner.run_reversal_scan(self.scan_date)
-                self.finished.emit(results, "Reversal scan completed")
+                results = scanner.run_reversal_scan(self.scan_date, lambda value, message: self.progress.emit(value, message))
+                self.finished.emit(self.scan_type, results, "Reversal scan completed")
         except Exception as e:
             logger.error(f"Scan failed: {e}")
-            self.finished.emit([], f"Scan failed: {str(e)}")
+            self.finished.emit(self.scan_type, [], f"Scan failed: {str(e)}")
 
 
 class ScannerGUI(QMainWindow):
@@ -71,20 +71,17 @@ class ScannerGUI(QMainWindow):
         title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         header_layout.addWidget(title_label)
         header_layout.addStretch()
-        
-        date_layout = QHBoxLayout()
-        date_layout.addWidget(QLabel("Scan Date:"))
-        self.date_edit = QDateEdit(date.today())
-        self.date_edit.setCalendarPopup(True)
-        date_layout.addWidget(self.date_edit)
-        
-        header_layout.addLayout(date_layout)
+
+        # Status label for current scan date
+        self.scan_date_label = QLabel("Scan Date: ...")
+        header_layout.addWidget(self.scan_date_label)
+
         main_layout.addLayout(header_layout)
         
         # Control panel
         control_group = QGroupBox("Scan Controls")
         control_layout = QHBoxLayout()
-        
+
         # Scan type selection
         scan_type_layout = QVBoxLayout()
         scan_type_layout.addWidget(QLabel("Scan Type:"))
@@ -92,7 +89,27 @@ class ScannerGUI(QMainWindow):
         self.scan_type_combo.addItems(["Continuation", "Reversal"])
         scan_type_layout.addWidget(self.scan_type_combo)
         control_layout.addLayout(scan_type_layout)
-        
+
+        # Price range inputs
+        price_layout = QFormLayout()
+        price_layout.addRow(QLabel("Price Range:"))
+
+        # Min price
+        self.min_price_spin = QSpinBox()
+        self.min_price_spin.setRange(10, 5000)
+        self.min_price_spin.setValue(100)
+        self.min_price_spin.setSuffix(" ₹")
+        price_layout.addRow("Min Price:", self.min_price_spin)
+
+        # Max price
+        self.max_price_spin = QSpinBox()
+        self.max_price_spin.setRange(100, 10000)
+        self.max_price_spin.setValue(2000)
+        self.max_price_spin.setSuffix(" ₹")
+        price_layout.addRow("Max Price:", self.max_price_spin)
+
+        control_layout.addLayout(price_layout)
+
         # Scan button
         self.scan_button = QPushButton("Run Scan")
         self.scan_button.clicked.connect(self.run_scan)
@@ -205,14 +222,18 @@ class ScannerGUI(QMainWindow):
     def run_scan(self):
         """Run the selected scan"""
         scan_type = self.scan_type_combo.currentText().lower()
-        scan_date = self.date_edit.date().toPyDate()
-        
+
+        # Update scanner price filters from GUI inputs
+        min_price = self.min_price_spin.value()
+        max_price = self.max_price_spin.value()
+        scanner.update_price_filters(min_price, max_price)
+
         self.scan_button.setEnabled(False)
         self.progress_bar.setValue(0)
-        self.status_bar.showMessage(f"Running {scan_type} scan for {scan_date}...")
-        
-        # Start worker thread
-        self.worker = ScanWorker(scan_type, scan_date)
+        self.status_bar.showMessage(f"Running {scan_type} scan...")
+
+        # Start worker thread (no date parameter needed - scanner auto-detects)
+        self.worker = ScanWorker(scan_type, None)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self.scan_finished)
         self.worker.start()
@@ -220,64 +241,101 @@ class ScannerGUI(QMainWindow):
     def update_progress(self, value: int, message: str):
         """Update progress bar"""
         self.progress_bar.setValue(value)
-        self.status_bar.showMessage(message)
+
+        # Check for special SCAN_DATE message to update the date label
+        if message.startswith("SCAN_DATE:"):
+            scan_date = message.split(":", 1)[1]
+            self.scan_date_label.setText(f"Scan Date: {scan_date}")
+        else:
+            self.status_bar.showMessage(message)
     
-    def scan_finished(self, results: List[Dict], message: str):
+    def scan_finished(self, scan_type: str, results: List[Dict], message: str):
         """Handle scan completion"""
         self.scan_button.setEnabled(True)
         self.progress_bar.setValue(100)
         self.status_bar.showMessage(message)
-        
+
         if results:
-            self.display_results(results)
-            QMessageBox.information(self, "Scan Complete", 
+            self.display_results(scan_type, results)
+            QMessageBox.information(self, "Scan Complete",
                                   f"{message}\nFound {len(results)} candidates")
         else:
-            QMessageBox.warning(self, "Scan Complete", 
+            QMessageBox.warning(self, "Scan Complete",
                               f"{message}\nNo candidates found")
     
-    def display_results(self, results: List[Dict]):
+    def display_results(self, scan_type: str, results: List[Dict]):
         """Display scan results in table"""
+        if scan_type == 'continuation':
+            # Continuation scan columns
+            headers = ["Symbol", "Close", "Dist to MA %", "Phase1 High", "Phase2 Low", "Depth %", "ADR %"]
+            self.results_table.setColumnCount(7)
+        else:
+            # Reversal scan columns
+            headers = ["Symbol", "Close", "Decline Days", "Decline %", "ADR %"]
+            self.results_table.setColumnCount(5)
+
+        self.results_table.setHorizontalHeaderLabels(headers)
+
         self.results_table.setRowCount(len(results))
-        
+
         for row, result in enumerate(results):
             # Symbol
             symbol_item = QTableWidgetItem(result['symbol'])
             symbol_item.setFlags(symbol_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
             self.results_table.setItem(row, 0, symbol_item)
-            
-            # Score (only for reversal scans)
-            if 'score' in result:
-                score_item = QTableWidgetItem(f"{result['score']}")
-            else:
-                score_item = QTableWidgetItem("N/A")
-            score_item.setFlags(score_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.results_table.setItem(row, 1, score_item)
-            
-            # MA Angle
-            ma_angle = result.get('ma_angle', 0)
-            ma_item = QTableWidgetItem(f"{ma_angle:.2f}")
-            ma_item.setFlags(ma_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.results_table.setItem(row, 2, ma_item)
-            
-            # Distance from High
-            distance = result.get('distance_from_high', 0)
-            distance_item = QTableWidgetItem(f"{distance*100:.2f}%")
-            distance_item.setFlags(distance_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.results_table.setItem(row, 3, distance_item)
-            
-            # ADR %
-            adr = result.get('adr_percent', 0)
-            adr_item = QTableWidgetItem(f"{adr:.2f}%")
-            adr_item.setFlags(adr_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.results_table.setItem(row, 4, adr_item)
-            
-            # Notes
-            notes = result.get('notes', '')
-            notes_item = QTableWidgetItem(notes)
-            notes_item.setFlags(notes_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.results_table.setItem(row, 5, notes_item)
-        
+
+            if scan_type == 'continuation':
+                # Close
+                close_item = QTableWidgetItem(f"{result['close']:.2f}")
+                close_item.setFlags(close_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 1, close_item)
+
+                # Dist to MA %
+                dist_item = QTableWidgetItem(f"{result['dist_to_ma_pct']:.1f}%")
+                dist_item.setFlags(dist_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 2, dist_item)
+
+                # Phase1 High
+                p1h_item = QTableWidgetItem(f"{result['phase1_high']:.2f}")
+                p1h_item.setFlags(p1h_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 3, p1h_item)
+
+                # Phase2 Low
+                p2l_item = QTableWidgetItem(f"{result['phase2_low']:.2f}")
+                p2l_item.setFlags(p2l_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 4, p2l_item)
+
+                # Depth %
+                depth_item = QTableWidgetItem(f"{result['depth_pct']:.1f}%")
+                depth_item.setFlags(depth_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 5, depth_item)
+
+                # ADR %
+                adr_item = QTableWidgetItem(f"{result['adr_pct']:.1f}%")
+                adr_item.setFlags(adr_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 6, adr_item)
+
+            else:  # reversal
+                # Close
+                close_item = QTableWidgetItem(f"{result['close']:.2f}")
+                close_item.setFlags(close_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 1, close_item)
+
+                # Decline Days
+                decline_days_item = QTableWidgetItem(f"{result['decline_days']}")
+                decline_days_item.setFlags(decline_days_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 2, decline_days_item)
+
+                # Decline %
+                decline_pct_item = QTableWidgetItem(f"{result['decline_percent']*100:.1f}%")
+                decline_pct_item.setFlags(decline_pct_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 3, decline_pct_item)
+
+                # ADR %
+                adr_item = QTableWidgetItem(f"{result['adr_percent']:.1f}%")
+                adr_item.setFlags(adr_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 4, adr_item)
+
         self.results_table.resizeColumnsToContents()
     
     def add_to_watchlist(self, row: int, column: int):
@@ -368,13 +426,17 @@ class ScannerGUI(QMainWindow):
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Results", "", "CSV Files (*.csv)"
         )
-        
+
         if filename:
             try:
                 with open(filename, 'w') as f:
                     # Write header
-                    f.write("Symbol,Score,MA_Angle,Distance_from_High,ADR_Percent,Notes\n")
-                    
+                    headers = []
+                    for col in range(self.results_table.columnCount()):
+                        header_item = self.results_table.horizontalHeaderItem(col)
+                        headers.append(header_item.text() if header_item else f"Column_{col}")
+                    f.write(",".join(headers) + "\n")
+
                     # Write data
                     for row in range(self.results_table.rowCount()):
                         row_data = []
@@ -382,7 +444,7 @@ class ScannerGUI(QMainWindow):
                             item = self.results_table.item(row, col)
                             row_data.append(item.text() if item else "")
                         f.write(",".join(row_data) + "\n")
-                
+
                 QMessageBox.information(self, "Export Complete", f"Results exported to {filename}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")

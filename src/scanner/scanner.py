@@ -4,11 +4,13 @@ Implements continuation and reversal scan algorithms
 """
 
 import logging
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import List, Dict, Optional
+import pandas as pd
 
 from src.utils.database import db
 from src.utils.data_fetcher import data_fetcher
+from src.utils.cache_manager import cache_manager
 from .filters import FilterEngine
 from .continuation_analyzer import ContinuationAnalyzer
 from .reversal_analyzer import ReversalAnalyzer
@@ -20,132 +22,426 @@ class Scanner:
     """Main scanner class for continuation and reversal detection"""
 
     def __init__(self):
-        # Scan parameters - only used ones
-        self.continuation_params = {
+        # Common scan parameters
+        self.common_params = {
             'min_volume_days': 1,            # At least 1 day with 1M+ volume
             'volume_threshold': 1000000,     # 1M shares
-            'min_adr': 0.03,                 # 3% ADR
+            'min_adr': 0.03,                 # 3% ADR (same for both scans)
             'price_min': 100,                # ₹100 minimum
             'price_max': 2000,               # ₹2000 maximum
         }
 
+        # Continuation scan parameters
+        self.continuation_params = {
+            **self.common_params,            # Include common parameters
+        }
+
         # Reversal scan parameters
         self.reversal_params = {
-            'decline_days': (4, 7),          # 4-7 days decline
+            **self.common_params,            # Include common parameters
+            'decline_days': (3, 8),          # 3-8 days decline
             'min_decline_percent': 0.10,     # 10% minimum decline
-            'min_volume_days': 1,            # At least 1 day with 1M+ volume
-            'volume_threshold': 1000000,     # 1M shares
-            'min_adr': 0.03,                 # 3% ADR
-            'price_min': 100,                # ₹100 minimum
-            'price_max': 2000,               # ₹2000 maximum
         }
 
         # Initialize analyzer modules
         self.filter_engine = FilterEngine(self.continuation_params, self.reversal_params)
         self.continuation_analyzer = ContinuationAnalyzer(self.filter_engine)
         self.reversal_analyzer = ReversalAnalyzer(self.filter_engine, self.reversal_params)
+
+    def update_price_filters(self, min_price: int, max_price: int):
+        """Update price filter parameters"""
+        self.common_params['price_min'] = min_price
+        self.common_params['price_max'] = max_price
+
+        # Update dependent parameter sets
+        self.continuation_params.update(self.common_params)
+        self.reversal_params.update(self.common_params)
+
+        # Re-initialize filter engine with updated parameters
+        self.filter_engine = FilterEngine(self.continuation_params, self.reversal_params)
+        self.continuation_analyzer = ContinuationAnalyzer(self.filter_engine)
+        self.reversal_analyzer = ReversalAnalyzer(self.filter_engine, self.reversal_params)
+
+        logger.info(f"Updated price filters: ₹{min_price} - ₹{max_price}")
     
-    def run_continuation_scan(self, scan_date: date = None) -> List[Dict]:
+    def _ensure_data_cached(self, nse_stocks: List[Dict], scan_date: date, progress_callback=None):
+        """Filter stocks to only those with cached data for scan date"""
+        logger.info("Filtering stocks to those with cached data...")
+
+        stocks_with_data = []
+        total_checked = len(nse_stocks)
+
+        # Check which NSE stocks have cached data
+        for i, stock in enumerate(nse_stocks, 1):
+            symbol = stock['symbol']
+            try:
+                # Load cached data directly (NO API calls)
+                cached_data = cache_manager.load_cached_data(symbol)
+
+                if cached_data is not None and not cached_data.empty and scan_date in cached_data.index:
+                    stocks_with_data.append(stock)
+                # else: Skip stocks without data
+
+                # Progress update
+                if progress_callback and (i % 100 == 0 or i == total_checked):
+                    progress_percent = int((i / total_checked) * 50)
+                    progress_callback(progress_percent, f"Checked {i}/{total_checked} stocks")
+
+            except Exception as e:
+                logger.warning(f"Error checking cache for {symbol}: {e}")
+                continue
+
+        available_stocks = len(stocks_with_data)
+        logger.info(f"✅ Found {available_stocks} stocks with cached data for {scan_date} (from {total_checked} NSE stocks)")
+
+        if available_stocks == 0:
+            logger.error("CRITICAL: No stocks have cached data!")
+            if progress_callback:
+                progress_callback(50, "ERROR: No stocks have cached data")
+            return []
+        else:
+            if progress_callback:
+                progress_callback(50, f"Found {available_stocks} stocks with cached data")
+            return stocks_with_data
+
+    def _get_all_cached_stocks_with_data(self, scan_date: date, progress_callback=None):
+        """Get ALL cached stocks that have data for scan_date (not just NSE API stocks)"""
+        logger.info("Getting all cached stocks with data...")
+
+        from pathlib import Path
+        cache_dir = Path('data/cache')
+        cached_files = list(cache_dir.glob('*.pkl'))
+
+        stocks_with_data = []
+        total_cached = len(cached_files)
+
+        logger.info(f"Checking {total_cached} cached stock files...")
+
+        # Check each cached stock
+        for i, cache_file in enumerate(cached_files, 1):
+            symbol = cache_file.stem
+            try:
+                # Load cached data directly (NO API calls)
+                cached_data = cache_manager.load_cached_data(symbol)
+
+                if cached_data is not None and not cached_data.empty:
+                    # Check if scan_date exists in data (more robust check)
+                    try:
+                        target_timestamp = pd.Timestamp(scan_date)
+                        has_data = target_timestamp in cached_data.index
+                        # Alternative check: look for date in the index
+                        if not has_data:
+                            # Check if any date in index matches scan_date
+                            for idx_date in cached_data.index:
+                                # idx_date is already a date-like object from DatetimeIndex
+                                if hasattr(idx_date, 'date'):
+                                    # It's a Timestamp, convert to date
+                                    idx_date_only = idx_date.date()
+                                else:
+                                    # It's already a date
+                                    idx_date_only = idx_date
+                                if idx_date_only == scan_date:
+                                    has_data = True
+                                    break
+
+                        if has_data:
+                            # Create stock dict like NSE API format
+                            stocks_with_data.append({'symbol': symbol, 'name': symbol, 'series': 'EQ'})
+                    except Exception as e:
+                        logger.warning(f"Error checking date for {symbol}: {e}")
+                        continue
+                # else: Skip stocks without data
+
+                # Progress update
+                if progress_callback and (i % 200 == 0 or i == total_cached):
+                    progress_percent = int((i / total_cached) * 50)
+                    progress_callback(progress_percent, f"Verified cache for {i}/{total_cached} stocks")
+
+            except Exception as e:
+                logger.warning(f"Error checking cache for {symbol}: {e}")
+                continue
+
+        available_stocks = len(stocks_with_data)
+        logger.info(f"Found {available_stocks} cached stocks with data for {scan_date}")
+
+        if available_stocks == 0:
+            logger.error("CRITICAL: No cached stocks have data!")
+            if progress_callback:
+                progress_callback(50, "ERROR: No cached stocks have data")
+            return []
+        else:
+            if progress_callback:
+                progress_callback(50, f"Found {available_stocks} cached stocks with data")
+            return stocks_with_data
+
+    def run_continuation_scan(self, scan_date: date = None, progress_callback=None, min_price: int = None, max_price: int = None) -> List[Dict]:
         """
-        Run continuation scan for given date (default: today)
+        Run continuation scan using the most recent available cached data
         Returns list of potential continuation candidates
         """
         if scan_date is None:
-            scan_date = date.today()
-        
-        logger.info(f"Running continuation scan for {scan_date}")
-        
+            # Auto-detect the latest available date with cached data
+            scan_date = self._find_latest_available_scan_date()
+            if scan_date is None:
+                logger.error("No cached data available for scanning")
+                if progress_callback:
+                    progress_callback(0, "ERROR: No cached data available")
+                return []
+
+        logger.info(f"Running continuation scan for {scan_date} (latest available data)")
+        if progress_callback:
+            progress_callback(0, f"SCAN_DATE:{scan_date}")
+            progress_callback(0, f"Loading historical data for {scan_date}")
+
         try:
-            # Get NSE stocks
-            nse_stocks = data_fetcher.fetch_nse_stocks()
+            # Get ALL cached stocks (not just NSE API stocks)
+            filtered_stocks = self._get_all_cached_stocks_with_data(scan_date, progress_callback)
+
+            if not filtered_stocks:  # No stocks have data
+                logger.warning("No stocks have cached data - cannot run scan")
+                return []
+
             candidates = []
-            
-            # Use first 100 stocks directly (skip price filtering for now)
-            filtered_stocks = nse_stocks[:100]
-            logger.info(f"Using first {len(filtered_stocks)} stocks for scanning")
-            
-            # Scan each stock
-            for stock in filtered_stocks:
+            logger.info(f"Scanning {len(filtered_stocks)} stocks with cached data")
+
+            # Scan each stock (with progress updates)
+            total_stocks = len(filtered_stocks)
+            for i, stock in enumerate(filtered_stocks, 1):
                 try:
                     symbol = stock['symbol']
-                    result = self.continuation_analyzer.analyze_continuation_setup(symbol, scan_date)
+
+                    # Get cached data (should be available after pre-caching)
+                    # Load ALL available historical data for proper MA calculation throughout 80-day window
+                    data = data_fetcher.get_data_for_date_range(
+                        symbol,
+                        None,  # From earliest available
+                        scan_date
+                    )
+
+
+                    # Check if scan_date exists in data (robust check)
+                    target_timestamp = pd.Timestamp(scan_date)
+                    has_scan_date = target_timestamp in data.index
+                    # Alternative check: look for date in the index
+                    if not has_scan_date:
+                        # Check if any date in index matches scan_date
+                        for idx_date in data.index:
+                            if idx_date.date() == scan_date:
+                                has_scan_date = True
+                                break
+
+                    if data.empty or not has_scan_date:
+                        logger.warning(f"No cached data for {symbol}, skipping")
+                        continue
+
+                    # Calculate technical indicators
+                    data = data_fetcher.calculate_technical_indicators(data)
+                    latest = data.iloc[-1]
+
+                    # Apply base filters
+                    if not self.filter_engine.check_base_filters(latest, 'continuation'):
+                        continue
+
+                    # Check Volume
+                    if not self.filter_engine.check_volume_confirmation(data, 'continuation'):
+                        continue
+
+                    # Check ADR
+                    if not self.filter_engine.check_adr_threshold(latest):
+                        continue
+
+                    # Now run pattern analysis
+                    result = self.continuation_analyzer.analyze_continuation_setup(symbol, scan_date, data)
 
                     if result:
                         candidates.append(result)
 
+                    # Progress update during scanning
+                    if progress_callback and (i % 20 == 0 or i == total_stocks):
+                        progress_percent = int(50 + (i / total_stocks) * 50)  # 50-100% for scanning
+                        progress_callback(progress_percent, f"Scanned {i}/{total_stocks} stocks, found {len(candidates)} candidates")
+
                 except Exception as e:
                     logger.error(f"Error analyzing {symbol}: {e}")
                     continue
-            
-            # Sort by price (highest first)
-            candidates.sort(key=lambda x: x['price'], reverse=True)
-            
+
+            # Sort alphabetically by symbol
+            candidates.sort(key=lambda x: x['symbol'])
+
             logger.info(f"Found {len(candidates)} continuation candidates")
             return candidates
-            
+
         except Exception as e:
             logger.error(f"Error in continuation scan: {e}")
             return []
     
-    def run_reversal_scan(self, scan_date: date = None) -> List[Dict]:
+    def run_reversal_scan(self, scan_date: date = None, progress_callback=None) -> List[Dict]:
         """
-        Run reversal scan for given date (default: today)
+        Run reversal scan using the most recent available cached data
         Returns list of potential reversal candidates
         """
         if scan_date is None:
-            scan_date = date.today()
-        
-        logger.info(f"Running reversal scan for {scan_date}")
-        
+            # Auto-detect the latest available date with cached data
+            scan_date = self._find_latest_available_scan_date()
+            if scan_date is None:
+                logger.error("No cached data available for scanning")
+                if progress_callback:
+                    progress_callback(0, "ERROR: No cached data available")
+                return []
+
+        logger.info(f"Running reversal scan for {scan_date} (latest available data)")
+        if progress_callback:
+            progress_callback(0, f"SCAN_DATE:{scan_date}")
+            progress_callback(0, f"Scanning data for {scan_date}")
+
         try:
-            # Get NSE stocks
-            nse_stocks = data_fetcher.fetch_nse_stocks()
+            # Get ALL cached stocks (not just NSE API stocks)
+            filtered_stocks = self._get_all_cached_stocks_with_data(scan_date, progress_callback)
+
+            if not filtered_stocks:  # No stocks have data
+                logger.warning("No stocks have cached data - cannot run scan")
+                return []
+
             candidates = []
-            
-            # Filter by price range (optimized - limit to first 100 stocks)
-            filtered_stocks = []
-            for stock in nse_stocks[:100]:  # Limit to first 100 stocks for testing
-                try:
-                    price = self._get_stock_price(stock['symbol'])
-                    if self.reversal_params['price_min'] <= price <= self.reversal_params['price_max']:
-                        filtered_stocks.append(stock)
-                except:
-                    continue  # Skip stocks that fail to fetch price
-            
-            logger.info(f"Filtered {len(filtered_stocks)} stocks by price range from {len(nse_stocks[:100])} candidates")
-            
-            # Scan each stock
-            for stock in filtered_stocks:
+            logger.info(f"Scanning {len(filtered_stocks)} stocks with cached data")
+
+            # Scan each stock (with progress updates)
+            total_stocks = len(filtered_stocks)
+            for i, stock in enumerate(filtered_stocks, 1):
                 try:
                     symbol = stock['symbol']
-                    result = self.reversal_analyzer.analyze_reversal_setup(symbol, scan_date)
 
-                    if result and result['score'] > 0:
+                    # Get cached data (should be available after pre-caching)
+                    # Get last 30 days for pattern analysis
+                    data = data_fetcher.get_data_for_date_range(
+                        symbol,
+                        scan_date - timedelta(days=30), scan_date
+                    )
+
+                    # Check if scan_date exists in data (robust check)
+                    target_timestamp = pd.Timestamp(scan_date)
+                    has_scan_date = target_timestamp in data.index
+                    # Alternative check: look for date in the index
+                    if not has_scan_date:
+                        # Check if any date in index matches scan_date
+                        for idx_date in data.index:
+                            if idx_date.date() == scan_date:
+                                has_scan_date = True
+                                break
+
+                    if data.empty or not has_scan_date:
+                        logger.warning(f"No cached data for {symbol}, skipping")
+                        continue
+
+                    # Calculate technical indicators
+                    data = data_fetcher.calculate_technical_indicators(data)
+                    latest = data.iloc[-1]
+
+                    # Apply base filters
+                    base_pass = self.filter_engine.check_base_filters(latest, 'reversal')
+                    if symbol == 'ITC':
+                        logger.info(f"ITC DEBUG: base filters pass: {base_pass}")
+                        if not base_pass:
+                            logger.info(f"ITC DEBUG: price={latest['close']}, adr={latest.get('adr_percent', 0)}")
+                    if not base_pass:
+                        continue
+
+                    # Check volume confirmation
+                    volume_pass = self.filter_engine.check_volume_confirmation(data, 'reversal')
+                    if symbol == 'ITC':
+                        logger.info(f"ITC DEBUG: volume check pass: {volume_pass}")
+                    if not volume_pass:
+                        continue
+
+                    # Now run pattern analysis
+                    result = self.reversal_analyzer.analyze_reversal_setup(symbol, scan_date, data)
+
+                    if result:
                         candidates.append(result)
+
+                    # Progress update during scanning
+                    if progress_callback and (i % 20 == 0 or i == total_stocks):
+                        progress_percent = int(50 + (i / total_stocks) * 50)  # 50-100% for scanning
+                        progress_callback(progress_percent, f"Scanned {i}/{total_stocks} stocks, found {len(candidates)} candidates")
 
                 except Exception as e:
                     logger.error(f"Error analyzing {symbol}: {e}")
                     continue
-            
-            # Sort by score
-            candidates.sort(key=lambda x: x['score'], reverse=True)
-            
-            # Save results to database
-            for candidate in candidates:
-                db.insert_scan_result(
-                    scan_type='reversal',
-                    scan_date=scan_date,
-                    stock_id=candidate['stock_id'],
-                    score=candidate['score'],
-                    notes=candidate['notes']
-                )
-            
+
+            # Sort alphabetically by symbol
+            candidates.sort(key=lambda x: x['symbol'])
+
             logger.info(f"Found {len(candidates)} reversal candidates")
             return candidates
-            
+
         except Exception as e:
             logger.error(f"Error in reversal scan: {e}")
             return []
+
+    def _get_previous_trading_day(self, current_date: date) -> date:
+        """Get the previous trading day, skipping weekends"""
+        prev = current_date - timedelta(days=1)
+        while prev.weekday() >= 5:  # Saturday=5, Sunday=6
+            prev -= timedelta(days=1)
+        return prev
+
+    def _find_latest_available_scan_date(self) -> Optional[date]:
+        """
+        Find the most recent date that has cached data for stocks.
+        Optimized to check only a few files per date for speed.
+        """
+        from pathlib import Path
+
+        cache_dir = Path('data/cache')
+        cached_files = list(cache_dir.glob('*.pkl'))
+
+        if not cached_files:
+            logger.error("No cached stock files found")
+            return None
+
+        # Use only first 5 files for date detection (much faster)
+        sample_files = cached_files[:5]
+
+        # Check backwards from today, up to 30 days
+        for days_back in range(31):
+            check_date = date.today() - timedelta(days=days_back)
+
+            # Skip weekends (non-trading days)
+            if check_date.weekday() >= 5:
+                continue
+
+            stocks_with_data = 0
+
+            # Check how many stocks have data for this date
+            for cache_file in sample_files:
+                symbol = cache_file.stem
+                try:
+                    df = cache_manager.load_cached_data(symbol)
+                    if df is not None and not df.empty:
+                        # More robust date checking
+                        date_found = False
+                        for idx in df.index:
+                            if hasattr(idx, 'date') and idx.date() == check_date:
+                                date_found = True
+                                break
+                            elif str(idx).startswith(check_date.strftime('%Y-%m-%d')):
+                                date_found = True
+                                break
+
+                        if date_found:
+                            stocks_with_data += 1
+                            if stocks_with_data >= 3:  # Found enough stocks with data
+                                logger.info(f"Found latest available scan date: {check_date} ({stocks_with_data} stocks have data)")
+                                return check_date
+                except Exception:
+                    continue
+
+            if stocks_with_data > 0:
+                logger.info(f"Found latest available scan date: {check_date} ({stocks_with_data} stocks have data)")
+                return check_date
+
+        logger.error("No recent cached data found for any date in the last 30 days")
+        return None
 
     def _get_stock_price(self, symbol: str) -> float:
         """Get current stock price for filtering"""
