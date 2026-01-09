@@ -89,6 +89,8 @@ docs/prompts.md
 test_*.py
 debug_*.py
 *_debug.py
+option-trading-bot
+data
 
 # API credentials
 upstox_config.json

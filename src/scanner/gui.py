@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QProgressBar, QSpinBox, QFormLayout
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QClipboard
 
 from src.scanner.scanner import scanner
 from src.utils.database import db
@@ -108,6 +108,20 @@ class ScannerGUI(QMainWindow):
         self.max_price_spin.setSuffix(" ₹")
         price_layout.addRow("Max Price:", self.max_price_spin)
 
+        # Near MA threshold
+        self.near_ma_spin = QSpinBox()
+        self.near_ma_spin.setRange(1, 20)
+        self.near_ma_spin.setValue(5)
+        self.near_ma_spin.setSuffix(" %")
+        price_layout.addRow("Near MA Threshold:", self.near_ma_spin)
+
+        # Max body percentage
+        self.max_body_spin = QSpinBox()
+        self.max_body_spin.setRange(1, 10)
+        self.max_body_spin.setValue(5)
+        self.max_body_spin.setSuffix(" %")
+        price_layout.addRow("Max Body Size:", self.max_body_spin)
+
         control_layout.addLayout(price_layout)
 
         # Scan button
@@ -152,11 +166,15 @@ class ScannerGUI(QMainWindow):
         self.add_to_watchlist_btn = QPushButton("Add to Watchlist")
         self.add_to_watchlist_btn.clicked.connect(self.add_selected_to_watchlist)
         action_layout.addWidget(self.add_to_watchlist_btn)
-        
+
+        self.copy_btn = QPushButton("Copy Results")
+        self.copy_btn.clicked.connect(self.copy_results)
+        action_layout.addWidget(self.copy_btn)
+
         self.export_btn = QPushButton("Export Results")
         self.export_btn.clicked.connect(self.export_results)
         action_layout.addWidget(self.export_btn)
-        
+
         left_layout.addLayout(action_layout)
         left_panel.setLayout(left_layout)
         
@@ -223,10 +241,16 @@ class ScannerGUI(QMainWindow):
         """Run the selected scan"""
         scan_type = self.scan_type_combo.currentText().lower()
 
-        # Update scanner price filters from GUI inputs
+        # Update scanner filters from GUI inputs
         min_price = self.min_price_spin.value()
         max_price = self.max_price_spin.value()
         scanner.update_price_filters(min_price, max_price)
+
+        near_ma_threshold = self.near_ma_spin.value()
+        scanner.update_near_ma_threshold(near_ma_threshold)
+
+        max_body_percentage = self.max_body_spin.value()
+        scanner.update_max_body_percentage(max_body_percentage)
 
         self.scan_button.setEnabled(False)
         self.progress_bar.setValue(0)
@@ -271,8 +295,8 @@ class ScannerGUI(QMainWindow):
             self.results_table.setColumnCount(7)
         else:
             # Reversal scan columns
-            headers = ["Symbol", "Close", "Decline Days", "Decline %", "ADR %"]
-            self.results_table.setColumnCount(5)
+            headers = ["Symbol", "Close", "Period", "Decline %", "ADR %", "Trend"]
+            self.results_table.setColumnCount(6)
 
         self.results_table.setHorizontalHeaderLabels(headers)
 
@@ -321,10 +345,10 @@ class ScannerGUI(QMainWindow):
                 close_item.setFlags(close_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.results_table.setItem(row, 1, close_item)
 
-                # Decline Days
-                decline_days_item = QTableWidgetItem(f"{result['decline_days']}")
-                decline_days_item.setFlags(decline_days_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-                self.results_table.setItem(row, 2, decline_days_item)
+                # Period
+                period_item = QTableWidgetItem(f"{result['period']}")
+                period_item.setFlags(period_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 2, period_item)
 
                 # Decline %
                 decline_pct_item = QTableWidgetItem(f"{result['decline_percent']*100:.1f}%")
@@ -335,6 +359,11 @@ class ScannerGUI(QMainWindow):
                 adr_item = QTableWidgetItem(f"{result['adr_percent']:.1f}%")
                 adr_item.setFlags(adr_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.results_table.setItem(row, 4, adr_item)
+
+                # Trend
+                trend_item = QTableWidgetItem(result['trend_context'].capitalize())
+                trend_item.setFlags(trend_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                self.results_table.setItem(row, 5, trend_item)
 
         self.results_table.resizeColumnsToContents()
     
@@ -421,6 +450,35 @@ class ScannerGUI(QMainWindow):
         
         QMessageBox.information(self, "Success", f"Added {added_count} stocks to {watchlist_name}")
     
+    def copy_results(self):
+        """Copy scan results in Fyers watchlist format to clipboard"""
+        if self.results_table.rowCount() == 0:
+            QMessageBox.warning(self, "No Results", "No scan results to copy. Please run a scan first.")
+            return
+
+        # Extract symbols from the first column (Symbol column)
+        symbols = []
+        for row in range(self.results_table.rowCount()):
+            symbol_item = self.results_table.item(row, 0)  # Symbol is always in column 0
+            if symbol_item:
+                symbol = symbol_item.text().strip()
+                if symbol:
+                    symbols.append(f"NSE:{symbol}-EQ")
+
+        if not symbols:
+            QMessageBox.warning(self, "No Symbols", "No valid symbols found in results.")
+            return
+
+        # Create comma-separated string
+        fyers_format = ",".join(symbols)
+
+        # Copy to clipboard
+        clipboard = QApplication.clipboard()
+        clipboard.setText(fyers_format)
+
+        QMessageBox.information(self, "Copied to Clipboard",
+                              f"Copied {len(symbols)} symbols in Fyers format:\n\n{fyers_format[:200]}{'...' if len(fyers_format) > 200 else ''}")
+
     def export_results(self):
         """Export results to CSV"""
         filename, _ = QFileDialog.getSaveFileName(

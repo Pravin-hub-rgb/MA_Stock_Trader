@@ -58,7 +58,8 @@ class ContinuationAnalyzer:
         """
         # Parameters from spec
         LOOKBACK_DAYS = 80
-        NEAR_THRESHOLD = 0.05  # 5%
+        NEAR_THRESHOLD = params.get('near_ma_threshold', 0.05)  # Default 5% if not set
+        MAX_BODY_THRESHOLD = params.get('max_body_percentage', 0.03)  # Default 3% if not set
         ADR_PERIOD = 14
         ADR_MULT = 1.0
 
@@ -110,6 +111,11 @@ class ContinuationAnalyzer:
             if latest['Dist_to_MA_pct'] > NEAR_THRESHOLD:
                 reason += f", Close {latest['Dist_to_MA_pct']*100:.1f}% from MA (>5% threshold)"
             return False, reason
+
+        # --- BODY SIZE CHECK (Latest day candle) ---
+        body_size_pct = abs(latest['Open'] - latest['Close']) / latest['Close']
+        if body_size_pct >= MAX_BODY_THRESHOLD:
+            return False, f"Body too large: {body_size_pct*100:.1f}% >= {MAX_BODY_THRESHOLD*100:.1f}% threshold"
 
         # Slice last 80 trading days
         recent_80 = df.iloc[-LOOKBACK_DAYS:].copy()

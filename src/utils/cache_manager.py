@@ -125,8 +125,12 @@ class CacheManager:
                 combined.index = pd.to_datetime(combined.index)
 
             # Add technical indicators (recalculate for updated data)
-            from src.utils.data_fetcher import data_fetcher
-            combined = data_fetcher.calculate_technical_indicators(combined)
+            try:
+                from src.utils.data_fetcher import data_fetcher
+                combined = data_fetcher.calculate_technical_indicators(combined)
+            except ImportError:
+                # Skip technical indicators if data_fetcher not available
+                pass
 
             # Save updated cache
             self.save_cached_data(symbol, combined)

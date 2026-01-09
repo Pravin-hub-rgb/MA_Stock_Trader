@@ -31,50 +31,140 @@ class ReversalAnalyzer:
             if not self._check_extended_decline(data, symbol):
                 return None
 
+            # Find the best decline period
+            best_period = self._find_best_decline_period(data)
+            if not best_period:
+                return None
+
+            # Classify trend context
+            trend_context = self._classify_trend_context(data, best_period['period'])
+
             # All checks passed - return candidate
             return {
                 'symbol': symbol,
                 'close': latest['close'],
-                'decline_days': self._get_decline_days(data),
-                'decline_percent': self._get_decline_percent(data),
+                'period': best_period['period'],
+                'red_days': best_period['red_days'],
+                'green_days': best_period['green_days'],
+                'decline_percent': best_period['decline_percent'],
+                'trend_context': trend_context,
+                'liquidity_verified': True,
                 'adr_percent': latest['adr_percent']
             }
 
         except Exception as e:
             logger.error(f"Error analyzing reversal setup for {symbol}: {e}")
             return None
+    def _find_best_decline_period(self, data: pd.DataFrame) -> Optional[Dict]:
+        """
+        Find the best decline period that meets all criteria
+        Returns: Dictionary with period details or None if not qualified
+        """
+        best_setup = None
+        max_decline = 0
+
+        for period in [3, 4, 5, 6, 7, 8]:
+            if len(data) < period:
+                continue
+
+            period_data = data.tail(period)
+
+            # Count red and green days
+            red_days = sum(1 for _, row in period_data.iterrows() if row['close'] < row['open'])
+            green_days = period - red_days
+
+            # Check pattern logic
+            if not self._check_pattern_logic(red_days, green_days, period):
+                continue
+
+            # Calculate decline percentage
+            start_price = period_data.iloc[0]['open']
+            end_price = period_data.iloc[-1]['close']
+            decline_percent = (start_price - end_price) / start_price
+
+            if decline_percent >= 0.13:  # 13% minimum
+                # Check liquidity
+                if self._check_liquidity(period_data):
+                    if decline_percent > max_decline:
+                        max_decline = decline_percent
+                        best_setup = {
+                            'period': period,
+                            'red_days': red_days,
+                            'green_days': green_days,
+                            'decline_percent': decline_percent
+                        }
+
+        return best_setup
 
     def _check_extended_decline(self, data: pd.DataFrame, symbol: str = "") -> bool:
-        """Check for extended decline (3-8 consecutive red days with >=10% drop)"""
+        """Check for extended decline with correct pattern logic (3-8 days with >=13% drop)"""
         try:
-            # Get recent data
-            recent_data = data.tail(15)
+            # Check periods 3-8 days
+            for period in [3, 4, 5, 6, 7, 8]:
+                if len(data) < period:
+                    continue
 
-            # Count consecutive red candles (close < open)
-            red_days = 0
-            for i in range(len(recent_data) - 1, -1, -1):
-                if recent_data.iloc[i]['close'] < recent_data.iloc[i]['open']:
-                    red_days += 1
-                else:
-                    break
+                period_data = data.tail(period)
 
-            min_days, max_days = self.reversal_params['decline_days']
-            min_decline = self.reversal_params['min_decline_percent']
+                # Count red and green days
+                red_days = sum(1 for _, row in period_data.iterrows() if row['close'] < row['open'])
+                green_days = period - red_days
 
-            if min_days <= red_days <= max_days:
-                # Check decline percentage: first open to last close over the red candle period
-                start_price = recent_data.iloc[-red_days]['open']
-                end_price = recent_data.iloc[-1]['close']
-                decline_percent = (start_price - end_price) / start_price
+                # Apply period-specific pattern logic
+                if self._check_pattern_logic(red_days, green_days, period):
+                    # Calculate 13% minimum decline
+                    start_price = period_data.iloc[0]['open']
+                    end_price = period_data.iloc[-1]['close']
+                    decline_percent = (start_price - end_price) / start_price
 
-                if decline_percent >= min_decline:
-                    return True
+                    if decline_percent >= 0.13:  # 13% minimum
+                        # Check liquidity (1M+ volume on any day)
+                        if self._check_liquidity(period_data):
+                            return True
 
             return False
 
         except Exception as e:
             logger.error(f"Error checking extended decline: {e}")
             return False
+    def _check_pattern_logic(self, red_days: int, green_days: int, period: int) -> bool:
+        """
+        Check if red/green pattern meets requirements for given period
+        """
+        if period == 3:
+            return red_days == 3 and green_days == 0
+        elif period in [4, 5]:
+            return red_days > green_days
+        elif period in [6, 7, 8]:
+            return red_days + 1 > green_days
+        return False
+
+    def _check_liquidity(self, data: pd.DataFrame) -> bool:
+        """Check if stock has 1M+ volume on any day in the period"""
+        return (data['volume'] >= 1000000).any()
+
+    def _classify_trend_context(self, data: pd.DataFrame, period: int) -> str:
+        """
+        Classify trend context for live trading
+        Compare MA_20 at oldest decline day vs 5 days earlier
+        Uses similar approach as continuation analyzer - simple and clean
+        """
+        # Get oldest day of decline period
+        oldest_day_index = len(data) - period
+        oldest_day_data = data.iloc[oldest_day_index]
+
+        # Calculate MA_20 at oldest day
+        ma_at_oldest = data['close'].rolling(20).mean().iloc[oldest_day_index]
+
+        # Calculate MA_20 5 days before oldest day
+        ma_5_days_earlier = data['close'].rolling(20).mean().iloc[oldest_day_index - 5]
+
+        # Simple comparison - with proper data loading, we shouldn't get NaN
+        if pd.isna(ma_at_oldest) or pd.isna(ma_5_days_earlier):
+            # If we still get NaN, it means data loading issue - use conservative default
+            return 'downtrend'
+
+        return 'uptrend' if ma_at_oldest > ma_5_days_earlier else 'downtrend'
 
     def _check_oversold_condition(self, data: pd.DataFrame) -> Tuple[int, List[str]]:
         """Check for oversold conditions"""
@@ -129,3 +219,4 @@ class ReversalAnalyzer:
             return (start_price - end_price) / start_price
         except:
             return 0
+

@@ -34,6 +34,8 @@ class Scanner:
         # Continuation scan parameters
         self.continuation_params = {
             **self.common_params,            # Include common parameters
+            'near_ma_threshold': 0.05,       # 5% near MA threshold
+            'max_body_percentage': 0.05,     # 5% max body size
         }
 
         # Reversal scan parameters
@@ -63,6 +65,26 @@ class Scanner:
         self.reversal_analyzer = ReversalAnalyzer(self.filter_engine, self.reversal_params)
 
         logger.info(f"Updated price filters: ₹{min_price} - ₹{max_price}")
+
+    def update_near_ma_threshold(self, threshold_percent: int):
+        """Update near MA threshold parameter"""
+        self.continuation_params['near_ma_threshold'] = threshold_percent / 100.0  # Convert % to decimal
+
+        # Re-initialize filter engine with updated parameters
+        self.filter_engine = FilterEngine(self.continuation_params, self.reversal_params)
+        self.continuation_analyzer = ContinuationAnalyzer(self.filter_engine)
+
+        logger.info(f"Updated near MA threshold: {threshold_percent}%")
+
+    def update_max_body_percentage(self, threshold_percent: int):
+        """Update max body percentage parameter"""
+        self.continuation_params['max_body_percentage'] = threshold_percent / 100.0  # Convert % to decimal
+
+        # Re-initialize filter engine with updated parameters
+        self.filter_engine = FilterEngine(self.continuation_params, self.reversal_params)
+        self.continuation_analyzer = ContinuationAnalyzer(self.filter_engine)
+
+        logger.info(f"Updated max body percentage: {threshold_percent}%")
     
     def _ensure_data_cached(self, nse_stocks: List[Dict], scan_date: date, progress_callback=None):
         """Filter stocks to only those with cached data for scan date"""
@@ -120,6 +142,11 @@ class Scanner:
         # Check each cached stock
         for i, cache_file in enumerate(cached_files, 1):
             symbol = cache_file.stem
+
+            # Skip non-stock cache files (like market breadth cache)
+            if '_' in symbol or not symbol.isupper():
+                continue
+
             try:
                 # Load cached data directly (NO API calls)
                 cached_data = cache_manager.load_cached_data(symbol)
@@ -312,10 +339,10 @@ class Scanner:
                     symbol = stock['symbol']
 
                     # Get cached data (should be available after pre-caching)
-                    # Get last 30 days for pattern analysis
+                    # Get last 50 days for proper MA calculation in trend classification
                     data = data_fetcher.get_data_for_date_range(
                         symbol,
-                        scan_date - timedelta(days=30), scan_date
+                        scan_date - timedelta(days=50), scan_date
                     )
 
                     # Check if scan_date exists in data (robust check)
@@ -399,8 +426,9 @@ class Scanner:
             logger.error("No cached stock files found")
             return None
 
-        # Use only first 5 files for date detection (much faster)
-        sample_files = cached_files[:5]
+        # Filter to only stock cache files and use first 5 for date detection
+        stock_cache_files = [f for f in cached_files if '_' not in f.stem and f.stem.isupper()]
+        sample_files = stock_cache_files[:5]
 
         # Check backwards from today, up to 30 days
         for days_back in range(31):

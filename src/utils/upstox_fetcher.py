@@ -246,5 +246,72 @@ class UpstoxFetcher:
             logger.error(f"Error getting latest data for {symbol}: {e}")
             return {}
 
+    def get_ltp_data(self, symbol: str) -> Dict:
+        """
+        Get LTP (Last Traded Price) data using available API methods
+        """
+        try:
+            # Try direct HTTP request first (most reliable)
+            return self._get_ltp_data_fallback(symbol)
+
+        except Exception as e:
+            logger.error(f"All LTP methods failed for {symbol}: {e}")
+            return {}
+
+    def _get_ltp_data_fallback(self, symbol: str) -> Dict:
+        """
+        Fallback LTP data fetch using direct HTTP request (for SDK compatibility)
+        """
+        try:
+            import requests
+
+            instrument_key = self.get_instrument_key(symbol)
+            if not instrument_key:
+                return {}
+
+            url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={instrument_key}"
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.access_token}"
+            }
+
+            response = requests.get(url, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                if data.get('status') == 'success':
+                    # API returns data under different key format (NSE_EQ:BSE instead of NSE_EQ|INE118H01025)
+                    # Try multiple possible key formats
+                    data_dict = data.get('data', {})
+                    instrument_data = {}
+
+                    # Try the requested key first
+                    if instrument_key in data_dict:
+                        instrument_data = data_dict[instrument_key]
+                    else:
+                        # Try alternative formats - API uses NSE_EQ:SYMBOL format
+                        alt_key = f"NSE_EQ:{symbol.upper()}"
+                        if alt_key in data_dict:
+                            instrument_data = data_dict[alt_key]
+
+                    return {
+                        'symbol': symbol,
+                        'ltp': instrument_data.get('last_price'),
+                        'cp': instrument_data.get('cp'),  # Previous close
+                        'open': instrument_data.get('open_price'),
+                        'high': instrument_data.get('high_price'),
+                        'low': instrument_data.get('low_price'),
+                        'volume': instrument_data.get('volume'),
+                        'ltq': instrument_data.get('ltq'),
+                    }
+
+            logger.error(f"LTP V3 HTTP error: {response.status_code} - {response.text}")
+            return {}
+
+        except Exception as e:
+            logger.error(f"Error in LTP fallback for {symbol}: {e}")
+            return {}
+
 # Global instance
 upstox_fetcher = UpstoxFetcher()
