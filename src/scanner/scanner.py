@@ -24,7 +24,7 @@ class Scanner:
     def __init__(self):
         # Common scan parameters
         self.common_params = {
-            'min_volume_days': 1,            # At least 1 day with 1M+ volume
+            'min_volume_days': 2,            # At least 2 days with 1M+ volume
             'volume_threshold': 1000000,     # 1M shares
             'min_adr': 0.03,                 # 3% ADR (same for both scans)
             'price_min': 100,                # ₹100 minimum
@@ -85,6 +85,16 @@ class Scanner:
         self.continuation_analyzer = ContinuationAnalyzer(self.filter_engine)
 
         logger.info(f"Updated max body percentage: {threshold_percent}%")
+
+    def update_min_decline_percent(self, decline_percent: int):
+        """Update minimum decline percentage parameter for reversals"""
+        self.reversal_params['min_decline_percent'] = decline_percent / 100.0  # Convert % to decimal
+
+        # Re-initialize filter engine with updated parameters
+        self.filter_engine = FilterEngine(self.continuation_params, self.reversal_params)
+        self.reversal_analyzer = ReversalAnalyzer(self.filter_engine, self.reversal_params)
+
+        logger.info(f"Updated min decline percent: {decline_percent}%")
     
     def _ensure_data_cached(self, nse_stocks: List[Dict], scan_date: date, progress_callback=None):
         """Filter stocks to only those with cached data for scan date"""

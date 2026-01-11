@@ -23,24 +23,36 @@ class UpstoxFetcher:
         self.config_file = config_file
         self.api = None
         self.instrument_mapping = {}
+        self._is_initialized = False
         self._load_config()
         self._load_instrument_mapping()
-        self._initialize_client()
+        # Don't initialize client immediately - do it lazily when needed
 
     def _load_config(self):
         """Load Upstox API credentials"""
         if not os.path.exists(self.config_file):
-            raise FileNotFoundError(f"Config file {self.config_file} not found. Please create it with your Upstox API credentials.")
+            logger.warning(f"Config file {self.config_file} not found. Upstox features will be disabled.")
+            self.api_key = None
+            self.access_token = None
+            self.api_secret = None
+            return
 
-        with open(self.config_file, 'r') as f:
-            config = json.load(f)
+        try:
+            with open(self.config_file, 'r') as f:
+                config = json.load(f)
 
-        self.api_key = config.get('api_key')
-        self.access_token = config.get('access_token')
-        self.api_secret = config.get('api_secret')
+            self.api_key = config.get('api_key')
+            self.access_token = config.get('access_token')
+            self.api_secret = config.get('api_secret')
 
-        if not all([self.api_key, self.access_token]):
-            raise ValueError("API key and access token are required in config file")
+            if not all([self.api_key, self.access_token]):
+                logger.warning("API key and access token not found in config. Upstox features will be disabled.")
+                self.api_key = None
+                self.access_token = None
+        except Exception as e:
+            logger.warning(f"Error loading Upstox config: {e}. Upstox features will be disabled.")
+            self.api_key = None
+            self.access_token = None
 
     def _load_instrument_mapping(self):
         """Load instrument key mapping from Upstox master file"""
@@ -69,8 +81,17 @@ class UpstoxFetcher:
             logger.error(f"Error loading instrument mapping: {e}")
             self.instrument_mapping = {}
 
+    def _ensure_initialized(self):
+        """Ensure Upstox client is initialized before use"""
+        if not self._is_initialized:
+            self._initialize_client()
+            self._is_initialized = True
+
     def _initialize_client(self):
         """Initialize Upstox API client"""
+        if not self.access_token:
+            raise ConnectionError("Upstox access token not available. Please configure upstox_config.json")
+
         try:
             from upstox_client import ApiClient, Configuration
             from upstox_client.api import UserApi, HistoryApi
@@ -127,6 +148,9 @@ class UpstoxFetcher:
     def _fetch_single_chunk(self, instrument_key: str, start_date: date, end_date: date) -> pd.DataFrame:
         """Fetch a single chunk of historical data"""
         try:
+            # Ensure client is initialized
+            self._ensure_initialized()
+
             start_str = start_date.strftime('%Y-%m-%d')
             end_str = end_date.strftime('%Y-%m-%d')
 

@@ -1,1 +1,1 @@
-TCS,WIPRO
+TCS-d,WIPRO-u

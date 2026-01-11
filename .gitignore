@@ -94,3 +94,6 @@ data
 
 # API credentials
 upstox_config.json
+
+
+market_breadth_reports

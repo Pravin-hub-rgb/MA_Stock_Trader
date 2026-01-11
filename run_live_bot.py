@@ -85,6 +85,7 @@ def run_live_trading_bot():
     sys.path.append('src/trading/live_trading')
 
     from stock_monitor import StockMonitor
+    from reversal_monitor import ReversalMonitor
     from rule_engine import RuleEngine
     from selection_engine import SelectionEngine
     from paper_trader import PaperTrader
@@ -95,6 +96,7 @@ def run_live_trading_bot():
     # Create components
     upstox_fetcher = UpstoxFetcher()
     monitor = StockMonitor()
+    reversal_monitor = ReversalMonitor()
     rule_engine = RuleEngine()
     selection_engine = SelectionEngine()
     paper_trader = PaperTrader()
@@ -104,16 +106,27 @@ def run_live_trading_bot():
     print(f"Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print()
 
-    # Load candidate stocks
-    try:
-        with open('src/trading/continuation_list.txt', 'r') as f:
-            content = f.read().strip()
-            symbols = [s.strip() for s in content.split(',') if s.strip()]
-    except Exception as e:
-        print(f"❌ Error loading stocks: {e}")
-        return
+    # Parse command-line arguments
+    from bot_args import parse_bot_arguments
+    bot_config = parse_bot_arguments()
 
-    print(f"📋 Loaded {len(symbols)} stocks: {symbols}")
+    # Load stock configuration based on mode
+    from stock_classifier import StockClassifier
+    classifier = StockClassifier()
+    stock_config = classifier.get_stock_configuration(bot_config['mode'])
+
+    symbols = stock_config['symbols']
+    situations = stock_config['situations']
+
+    print(f"📋 Loaded {len(symbols)} stocks for {bot_config['trading_mode']}:")
+    for symbol in symbols:
+        situation = situations[symbol]
+        desc = {
+            'continuation': 'Continuation',
+            'reversal_s1': 'Reversal Uptrend',
+            'reversal_s2': 'Reversal Downtrend'
+        }.get(situation, situation)
+        print(f"   {symbol}: {desc}")
 
     # Get previous closes
     prev_closes = {}
@@ -135,7 +148,8 @@ def run_live_trading_bot():
             if key:
                 instrument_keys.append(key)
                 stock_symbols[key] = symbol
-                monitor.add_stock(symbol, key, prev_close)
+                situation = situations.get(symbol, 'continuation')
+                monitor.add_stock(symbol, key, prev_close, situation)
         except Exception as e:
             print(f"   ❌ {symbol}: No instrument key")
 
@@ -148,6 +162,16 @@ def run_live_trading_bot():
     def tick_handler(instrument_key, symbol, price, timestamp, ohlc_list=None):
         global global_selected_stocks, global_selected_symbols
         monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
+
+        # Process reversal data (OHLC for climax detection)
+        if ohlc_list and bot_config['mode'] == 'r':
+            stock = monitor.stocks.get(instrument_key)
+            if stock and stock.situation == 'reversal_s2':
+                reversal_monitor.process_three_min_bar(symbol, ohlc_list)
+                # Check for climax detection
+                if reversal_monitor.detect_climax_bar(symbol) and not stock.climax_detected:
+                    stock.climax_detected = True
+                    print(f"🎯 {symbol}: Climax bar detected - monitoring for retracement entries")
 
         # Check violations during confirmation window
         current_time = datetime.now(IST).time()
@@ -181,8 +205,33 @@ def run_live_trading_bot():
                     print(f"📈 {stock.symbol} entry triggered at ₹{price:.2f}, SL placed at ₹{stock.entry_sl:.2f}")
                     stock.enter_position(price, timestamp)
                     paper_trader.log_entry(stock, price, timestamp)
-                # Removed spam logging - only log actual entries
-                pass
+
+            # Check reversal entry signals
+            if bot_config['mode'] == 'r':
+                for stock in monitor.stocks.values():
+                    if stock.symbol in global_selected_symbols and stock.situation == 'reversal_s2':
+                        # Check sub-case 2A (within first 5 min)
+                        if reversal_monitor.should_enter_subcase_2a(stock, current_time):
+                            print(f"🎯 {stock.symbol} sub-case 2A entry triggered at ₹{price:.2f} (open=low)")
+                            stock.entry_high = price  # Set entry level for SL calculation
+                            stock.entry_sl = price * 0.96  # 4% SL
+                            stock.enter_position(price, timestamp)
+                            paper_trader.log_entry(stock, price, timestamp)
+                            break  # One entry per tick
+
+                        # Check sub-case 2B (dynamic retracement, no time limit)
+                        should_enter_2b, trigger_price = reversal_monitor.should_enter_subcase_2b(stock, current_time)
+                        if should_enter_2b and stock.entry_attempts < stock.max_entry_attempts:
+                            stock.entry_attempts += 1
+                            print(f"🎯 {stock.symbol} sub-case 2B entry #{stock.entry_attempts} triggered at ₹{price:.2f} (trigger: ₹{trigger_price:.2f})")
+                            stock.entry_high = price  # Set entry level for SL calculation
+                            stock.entry_sl = price * 0.96  # 4% SL
+                            stock.enter_position(price, timestamp)
+                            paper_trader.log_entry(stock, price, timestamp)
+
+                            # Update retracement trigger for next attempt
+                            reversal_monitor.update_retracement_trigger(stock)
+                            break  # One entry per tick
 
         # Check trailing stops and exit signals for entered positions
         if current_time >= ENTRY_DECISION_TIME:
@@ -285,9 +334,14 @@ def run_live_trading_bot():
             print("📊 PRE-QUALIFICATION STATUS:")
             for stock in monitor.stocks.values():
                 open_status = f"📈 Open: ₹{stock.open_price:.2f}" if stock.open_price else "❌ No opening price"
-                gap_status = "✅ Gap validated" if stock.gap_up_validated else "❓ Gap not validated"
+                gap_status = "✅ Gap validated" if stock.gap_validated else "❓ Gap not validated"
                 low_status = "✅ Low checked" if stock.low_violation_checked else "❓ Low not checked"
-                print(f"   {stock.symbol}: {open_status} | {gap_status} | {low_status}")
+                situation_desc = {
+                    'continuation': 'Cont',
+                    'reversal_s1': 'Rev-U',
+                    'reversal_s2': 'Rev-D'
+                }.get(stock.situation, stock.situation)
+                print(f"   {stock.symbol} ({situation_desc}): {open_status} | {gap_status} | {low_status}")
 
             monitor.prepare_entries()
 

@@ -17,9 +17,10 @@ from PyQt6.QtWidgets import (
     QTextEdit, QSplitter, QMessageBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 
 from src.utils.cache_manager import cache_manager
+from src.scanner.color_utils import get_up_4_5_color
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +255,7 @@ class BreadthCalculator(QThread):
 
                 # 20-day MA (only if we have MA data)
                 if ma_20 is not None and not pd.isna(ma_20):
-                    if close > ma_20:
+                    if close >= ma_20:
                         counts['above_20ma'] += 1
                     else:
                         counts['below_20ma'] += 1
@@ -267,7 +268,7 @@ class BreadthCalculator(QThread):
                         end_idx = df.index.get_loc(date_idx)
                         if end_idx >= 49:
                             ma_50_window = df.iloc[end_idx-49:end_idx+1]['close'].mean()
-                            if close > ma_50_window:
+                            if close >= ma_50_window:
                                 counts['above_50ma'] += 1
                             else:
                                 counts['below_50ma'] += 1
@@ -292,6 +293,8 @@ class BreadthAnalyzerGUI(QMainWindow):
         self.results_data = []
         self.init_ui()
         self.start_analysis()
+
+
 
     def init_ui(self):
         """Initialize the user interface"""
@@ -331,7 +334,7 @@ class BreadthAnalyzerGUI(QMainWindow):
         ])
         self.results_table.horizontalHeader().setStretchLastSection(True)
 
-        # Style the table with dark theme
+        # Style the table with dark theme - removed item background styling to allow programmatic colors
         self.results_table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #666666;
@@ -346,12 +349,10 @@ class BreadthAnalyzerGUI(QMainWindow):
                 border: 1px solid #555555;
                 padding: 5px;
                 text-align: center;
-                color: #ffffff;
-                background-color: transparent;
             }
             QTableWidget::item:selected {
-                background-color: #555555;
-                color: #ffffff;
+                background-color: #555555 !important;
+                color: #ffffff !important;
             }
             QHeaderView::section {
                 background-color: #333333;
@@ -448,9 +449,21 @@ class BreadthAnalyzerGUI(QMainWindow):
                 count_item = QTableWidgetItem(str(value))
                 count_item.setFlags(count_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 count_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                # Apply color coding to Up 4.5% column (col 1)
+                if col == 1 and key == 'up_4_5_pct':
+                    background_color = get_up_4_5_color(value)
+                    count_item.setData(Qt.ItemDataRole.BackgroundRole, background_color)
+                    count_item.setForeground(QColor(0, 0, 0))  # Black text
+
+
+
                 self.results_table.setItem(row, col, count_item)
 
         self.results_table.resizeColumnsToContents()
+        # Force refresh to show colors
+        self.results_table.update()
+        self.results_table.repaint()
 
     def export_csv(self, silent: bool = False):
         """Export results to CSV"""

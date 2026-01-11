@@ -1,5 +1,6 @@
 """
 Stock Monitor - Tracks per-stock state during live trading
+Supports both continuation and reversal trading situations
 """
 
 import sys
@@ -10,6 +11,7 @@ from typing import Dict, Optional, List
 import random
 
 from config import *
+from reversal_monitor import ReversalMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +19,11 @@ logger = logging.getLogger(__name__)
 class StockState:
     """Tracks the state of a single stock during trading session"""
 
-    def __init__(self, symbol: str, instrument_key: str, previous_close: float):
+    def __init__(self, symbol: str, instrument_key: str, previous_close: float, situation: str = 'continuation'):
         self.symbol = symbol
         self.instrument_key = instrument_key
         self.previous_close = previous_close
+        self.situation = situation  # 'continuation', 'reversal_s1', 'reversal_s2'
 
         # Market data
         self.open_price: Optional[float] = None
@@ -31,15 +34,21 @@ class StockState:
 
         # Status flags
         self.is_active = True  # Still being monitored
-        self.gap_up_validated = False
+        self.gap_validated = False  # Renamed from gap_up_validated for reversal
         self.low_violation_checked = False
         self.entry_ready = False
         self.entered = False
 
+        # Reversal-specific flags
+        self.climax_detected = False
+        self.retracement_trigger: Optional[float] = None
+        self.entry_attempts = 0
+        self.max_entry_attempts = 3
+
         # Volume tracking (9:15-9:20)
         self.early_volume = 0.0  # Cumulative volume during monitoring window
 
-        # Entry data (set at 9:20)
+        # Entry data (set at 9:20 or dynamically for reversal)
         self.entry_high: Optional[float] = None  # High reached by 9:20
         self.entry_sl: Optional[float] = None    # 4% below entry_high
 
@@ -66,23 +75,36 @@ class StockState:
         self.daily_high = price
         self.daily_low = price
 
-    def validate_gap_up(self) -> bool:
-        """Check if gap up is within valid range"""
+    def validate_gap(self) -> bool:
+        """Validate gap based on trading situation"""
         if self.open_price is None:
             return False
 
         gap_pct = (self.open_price - self.previous_close) / self.previous_close
 
-        if gap_pct < GAP_UP_MIN:
-            self.reject(f"Gap down: {gap_pct:.1%} < {GAP_UP_MIN:.1%}")
+        if self.situation in ['continuation', 'reversal_s1']:
+            # Gap up required (0-5%)
+            if gap_pct < 0:
+                self.reject(f"Gap down: {gap_pct:.1%} (need gap up for {self.situation})")
+                return False
+            if gap_pct > 0.05:
+                self.reject(f"Gap up too high: {gap_pct:.1%} > 5%")
+                return False
+        elif self.situation == 'reversal_s2':
+            # Gap down required (-5% to 0%)
+            if gap_pct > 0:
+                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for reversal_s2)")
+                return False
+            if gap_pct < -0.05:
+                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
+                return False
+        else:
+            self.reject(f"Unknown situation: {self.situation}")
             return False
 
-        if gap_pct > GAP_UP_MAX:
-            self.reject(f"Gap up too high: {gap_pct:.1%} > {GAP_UP_MAX:.1%}")
-            return False
-
-        self.gap_up_validated = True
-        logger.info(f"[{self.symbol}] ✅ Gap up validated: {gap_pct:.1%}")
+        self.gap_validated = True
+        gap_type = "up" if gap_pct >= 0 else "down"
+        logger.info(f"[{self.symbol}] ✅ Gap {gap_type} validated: {gap_pct:.1%} ({self.situation})")
         return True
 
     def check_low_violation(self) -> bool:
@@ -156,12 +178,13 @@ class StockState:
         """Get current status for logging"""
         return {
             'symbol': self.symbol,
+            'situation': self.situation,
             'is_active': self.is_active,
             'open_price': self.open_price,
             'current_price': self.current_price,
             'daily_high': self.daily_high,
             'daily_low': self.daily_low,
-            'gap_up_validated': self.gap_up_validated,
+            'gap_validated': self.gap_validated,
             'entry_ready': self.entry_ready,
             'entry_high': self.entry_high,
             'entry_sl': self.entry_sl,
@@ -180,14 +203,14 @@ class StockMonitor:
         self.stocks: Dict[str, StockState] = {}  # instrument_key -> StockState
         self.session_start_time = None
 
-    def add_stock(self, symbol: str, instrument_key: str, previous_close: float):
+    def add_stock(self, symbol: str, instrument_key: str, previous_close: float, situation: str = 'continuation'):
         """Add a stock to monitor"""
         if instrument_key in self.stocks:
             logger.warning(f"Stock {symbol} already being monitored")
             return
 
-        self.stocks[instrument_key] = StockState(symbol, instrument_key, previous_close)
-        logger.info(f"📊 Added {symbol} to monitor (prev close: {previous_close:.2f})")
+        self.stocks[instrument_key] = StockState(symbol, instrument_key, previous_close, situation)
+        logger.info(f"📊 Added {symbol} ({situation}) to monitor (prev close: {previous_close:.2f})")
 
     def remove_stock(self, instrument_key: str):
         """Remove a stock from monitoring"""
@@ -206,7 +229,7 @@ class StockMonitor:
         rejected = []
 
         for stock in self.stocks.values():
-            if stock.is_active and stock.gap_up_validated and stock.low_violation_checked:
+            if stock.is_active and stock.gap_validated and stock.low_violation_checked:
                 qualified.append(stock)
             else:
                 rejected.append(stock)
@@ -233,7 +256,7 @@ class StockMonitor:
                 status_parts.append(f"📈 Open: ₹{stock.open_price:.2f} ({gap_pct:+.1f}%)")
 
             # Gap validation status
-            if stock.gap_up_validated:
+            if stock.gap_validated:
                 status_parts.append("✅ Gap validated")
             elif stock.rejection_reason and "Gap" in stock.rejection_reason:
                 status_parts.append(f"❌ {stock.rejection_reason}")
@@ -249,7 +272,7 @@ class StockMonitor:
                 status_parts.append("❓ Low not checked")
 
             # Overall status
-            if stock.is_active and stock.gap_up_validated and stock.low_violation_checked:
+            if stock.is_active and stock.gap_validated and stock.low_violation_checked:
                 overall = "✅ QUALIFIED"
             else:
                 overall = "❌ REJECTED"
@@ -292,8 +315,8 @@ class StockMonitor:
                     stock.set_open_price(open_price)
                     logger.info(f"[{symbol}] ✅ OPEN PRICE SET: {open_price:.2f} (prev close: {stock.previous_close:.2f})")
 
-                    # Validate gap up once we have the reliable opening price
-                    stock.validate_gap_up()
+                    # Validate gap once we have the reliable opening price
+                    stock.validate_gap()
                     break
 
     def process_tick(self, instrument_key: str, symbol: str, price: float, timestamp: datetime, ohlc_list: list = None):
@@ -322,7 +345,7 @@ class StockMonitor:
             return
 
         for stock in self.get_active_stocks():
-            if stock.gap_up_validated and not stock.low_violation_checked:
+            if stock.gap_validated and not stock.low_violation_checked:
                 stock.check_low_violation()
 
     def accumulate_volume(self, instrument_key: str, volume: float):
@@ -380,7 +403,7 @@ class StockMonitor:
             open_price = min(open_price, stock.previous_close * 1.10)  # Max 10% above
 
             stock.set_open_price(open_price)
-            stock.validate_gap_up()
+            stock.validate_gap()
 
             logger.info(f"🧪 {stock.symbol}: Simulated open ₹{open_price:.2f} (gap: {gap_pct:+.1%})")
 
@@ -428,7 +451,7 @@ class StockMonitor:
 
         # Simulate being in confirmation window
         for stock in self.get_active_stocks():
-            if stock.gap_up_validated and not stock.low_violation_checked:
+            if stock.gap_validated and not stock.low_violation_checked:
                 stock.check_low_violation()
 
         # Step 4: Prepare entries
