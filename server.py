@@ -131,62 +131,80 @@ async def get_scan_status(operation_id: str):
 
 @app.get("/api/breadth/data")
 async def get_breadth_data():
-    """Get all cached breadth data"""
+    """Get cached breadth data from existing breadth_data.pkl file"""
     try:
-        # Import here to avoid startup issues
+        # Use the existing BreadthCacheManager from the working GUI
         from src.scanner.market_breadth_analyzer import breadth_cache
 
-        # Get all cached breadth data
-        cached_dates = breadth_cache.get_all_cached_dates()
-        results = []
+        # Get all cached dates
+        all_dates = breadth_cache.get_all_cached_dates()
 
-        for date_key in sorted(cached_dates, reverse=True):  # Most recent first
-            try:
-                cached_data = breadth_cache.get_cached_breadth(date_key)
-                if cached_data:
-                    result = {
-                        'date': date_key,
-                        'up_4_5_pct': cached_data.get('up_4_5', 0),
-                        'down_4_5_pct': cached_data.get('down_4_5', 0),
-                        'up_20_pct_5d': cached_data.get('up_20_5d', 0),
-                        'down_20_pct_5d': cached_data.get('down_20_5d', 0),
-                        'above_20ma': cached_data.get('above_20ma', 0),
-                        'below_20ma': cached_data.get('below_20ma', 0),
-                        'above_50ma': cached_data.get('above_50ma', 0),
-                        'below_50ma': cached_data.get('below_50ma', 0)
-                    }
-                    results.append(result)
-            except Exception as e:
-                logger.warning(f"Error loading cached data for {date_key}: {e}")
-                continue
+        if not all_dates:
+            return {
+                "data": [],
+                "total_dates": 0,
+                "last_updated": None,
+                "message": "No breadth data available. Click 'Update' to calculate."
+            }
+
+        # Convert cached data to frontend format
+        results = []
+        for date_key in sorted(all_dates, reverse=True):  # Most recent first
+            cached_data = breadth_cache.get_cached_breadth(date_key)
+            if cached_data:
+                result = {
+                    'date': date_key,
+                    'up_4_5_pct': cached_data.get('up_4_5', 0),
+                    'down_4_5_pct': cached_data.get('down_4_5', 0),
+                    'up_20_pct_5d': cached_data.get('up_20_5d', 0),
+                    'down_20_pct_5d': cached_data.get('down_20_5d', 0),
+                    'above_20ma': cached_data.get('above_20ma', 0),
+                    'below_20ma': cached_data.get('below_20ma', 0),
+                    'above_50ma': cached_data.get('above_50ma', 0),
+                    'below_50ma': cached_data.get('below_50ma', 0)
+                }
+                results.append(result)
+
+        # Get last updated time from file modification
+        import os
+        cache_file = Path('data/breadth_cache/breadth_data.pkl')
+        last_updated = None
+        if cache_file.exists():
+            mtime = cache_file.stat().st_mtime
+            last_updated = datetime.fromtimestamp(mtime).isoformat()
 
         return {
             "data": results,
             "total_dates": len(results),
-            "last_updated": datetime.now().isoformat()
+            "last_updated": last_updated
         }
 
     except Exception as e:
         logger.error(f"Failed to load breadth data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/breadth/analyze")
-async def run_breadth_analysis(request: BreadthRequest, background_tasks: BackgroundTasks):
-    """Run market breadth analysis"""
+@app.post("/api/breadth/update")
+async def update_breadth_data():
+    """Update breadth data using existing BreadthCalculator - saves to breadth_data.pkl"""
     try:
-        operation_id = f"breadth_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Use the same BreadthCalculator as the GUI - it automatically uses breadth_cache
+        from src.scanner.market_breadth_analyzer import BreadthCalculator
 
-        # Start background task
-        background_tasks.add_task(run_breadth_analysis_background, operation_id, request)
+        # Create calculator and run the calculation
+        # This automatically saves results to breadth_data.pkl via BreadthCacheManager
+        calculator = BreadthCalculator()
+        results = calculator._calculate_breadth()
 
         return {
-            "status": "started",
-            "operation_id": operation_id,
-            "message": "Market breadth analysis started"
+            "status": "success",
+            "data": results,
+            "total_dates": len(results),
+            "last_updated": datetime.now().isoformat(),
+            "message": f"Breadth analysis completed: {len(results)} dates"
         }
 
     except Exception as e:
-        logger.error(f"Breadth analysis failed: {e}")
+        logger.error(f"Breadth update failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # File Management
@@ -255,6 +273,416 @@ async def download_file(filename: str):
     except Exception as e:
         logger.error(f"File download failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Live Trading Operations
+
+@app.get("/api/live-trading/validate-lists")
+async def validate_trading_lists():
+    """Validate continuation and reversal lists for live trading readiness"""
+    try:
+        from validate_trading_lists import TradingListValidator
+
+        validator = TradingListValidator()
+
+        # Capture output using redirect
+        import io
+        import sys
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            validator.print_results()
+
+        output = f.getvalue()
+
+        return {
+            'validation_output': output,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"List validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Global bot process management
+bot_process = None
+bot_logs = []
+
+@app.post("/api/live-trading/start")
+async def start_live_trading(data: dict, background_tasks: BackgroundTasks):
+    """Start the live trading bot as a subprocess"""
+    global bot_process, bot_logs
+
+    try:
+        mode = data.get('mode', 'continuation')
+
+        if mode not in ['continuation', 'reversal']:
+            raise HTTPException(status_code=400, detail="Invalid mode. Must be 'continuation' or 'reversal'")
+
+        # Check if bot is already running
+        if bot_process and bot_process.poll() is None:
+            return {
+                'status': 'already_running',
+                'message': 'Bot is already running',
+                'timestamp': datetime.now().isoformat()
+            }
+
+        # Clear previous logs
+        bot_logs.clear()
+
+        # Start the bot as a subprocess
+        import subprocess
+        import threading
+
+        try:
+            # Launch the actual run_live_bot.py script
+            # Convert mode to expected format: continuation -> c, reversal -> r
+            mode_arg = 'c' if mode == 'continuation' else 'r'
+            cmd = ['python', 'run_live_bot.py', mode_arg]
+
+            logger.info(f"Starting bot with command: {' '.join(cmd)}")
+            logger.info(f"Working directory: {os.getcwd()}")
+            logger.info(f"Python executable: {sys.executable}")
+
+            bot_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,  # Capture stderr separately
+                text=True,
+                bufsize=1,
+                cwd=os.getcwd(),
+                env={**os.environ, 'PYTHONUNBUFFERED': '1'}  # Disable output buffering
+            )
+
+            logger.info(f"Bot process started with PID: {bot_process.pid}")
+
+            # Start log streaming thread
+            def stream_logs():
+                global bot_logs
+                try:
+                    # Read stdout
+                    if bot_process.stdout:
+                        for line in iter(bot_process.stdout.readline, ''):
+                            if line.strip():
+                                bot_logs.append({
+                                    'timestamp': datetime.now().isoformat(),
+                                    'message': line.strip()
+                                })
+                                # Keep only last 100 logs
+                                if len(bot_logs) > 100:
+                                    bot_logs.pop(0)
+
+                    # Read stderr
+                    if bot_process.stderr:
+                        for line in iter(bot_process.stderr.readline, ''):
+                            if line.strip():
+                                bot_logs.append({
+                                    'timestamp': datetime.now().isoformat(),
+                                    'message': f"ERROR: {line.strip()}"
+                                })
+
+                except Exception as e:
+                    logger.error(f"Exception in log streaming thread: {e}")
+
+                # Check final process status
+                final_poll = bot_process.poll()
+                logger.info(f"Bot process finished with exit code: {final_poll}")
+
+            threading.Thread(target=stream_logs, daemon=True).start()
+
+            logger.info(f"Live trading bot started with mode: {mode}")
+
+            return {
+                'status': 'started',
+                'mode': mode,
+                'message': f'Bot started in {mode} mode',
+                'process_id': bot_process.pid,
+                'timestamp': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to launch bot process: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to start bot: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to start live trading: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/live-trading/stop")
+async def stop_live_trading():
+    """Stop the live trading bot"""
+    global bot_process
+
+    try:
+        if not bot_process:
+            return {
+                'status': 'not_running',
+                'message': 'Bot is not running',
+                'timestamp': datetime.now().isoformat()
+            }
+
+        # Terminate the bot process
+        try:
+            bot_process.terminate()
+            # Wait up to 5 seconds for graceful shutdown
+            try:
+                bot_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't respond
+                bot_process.kill()
+                bot_process.wait()
+
+            logger.info("Live trading bot stopped successfully")
+            bot_process = None
+
+            return {
+                'status': 'stopped',
+                'message': 'Bot stopped successfully',
+                'timestamp': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Error stopping bot process: {e}")
+            # Try force kill
+            try:
+                if bot_process and bot_process.poll() is None:
+                    bot_process.kill()
+                    bot_process = None
+            except:
+                pass
+
+            raise HTTPException(status_code=500, detail=f"Failed to stop bot: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stop live trading: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/live-trading/logs")
+async def get_live_trading_logs():
+    """Get current live trading logs"""
+    global bot_logs
+
+    return {
+        'logs': bot_logs[-50:],  # Return last 50 logs
+        'is_running': bot_process is not None and bot_process.poll() is None,
+        'total_logs': len(bot_logs),
+        'timestamp': datetime.now().isoformat()
+    }
+
+@app.get("/api/live-trading/status")
+async def get_live_trading_status():
+    """Get live trading bot status"""
+    global bot_process
+
+    is_running = bot_process is not None and bot_process.poll() is None
+
+    return {
+        'is_running': is_running,
+        'process_id': bot_process.pid if bot_process else None,
+        'exit_code': bot_process.poll() if bot_process else None,
+        'total_logs': len(bot_logs),
+        'timestamp': datetime.now().isoformat()
+    }
+
+# Data Management
+
+@app.post("/api/data/update-bhavcopy")
+async def update_bhavcopy_data(background_tasks: BackgroundTasks):
+    """Update latest bhavcopy data from NSE"""
+    try:
+        operation_id = f"bhavcopy_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Start background task
+        background_tasks.add_task(run_bhavcopy_update_background, operation_id)
+
+        return {
+            "status": "started",
+            "operation_id": operation_id,
+            "message": "Bhavcopy data update started"
+        }
+
+    except Exception as e:
+        logger.error(f"Bhavcopy update failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/data/status/{operation_id}")
+async def get_data_update_status(operation_id: str):
+    """Get status of data update operation"""
+    if operation_id not in active_operations:
+        raise HTTPException(status_code=404, detail="Operation not found")
+
+    return active_operations[operation_id]
+
+@app.get("/api/data/cache-info")
+async def get_cache_info():
+    """Get information about cached data"""
+    try:
+        import os
+        from pathlib import Path
+
+        cache_dir = Path('bhavcopy_cache')
+        cache_info = {
+            'cache_exists': cache_dir.exists(),
+            'total_files': 0,
+            'total_size_mb': 0,
+            'last_updated': None
+        }
+
+        if cache_dir.exists():
+            total_size = 0
+            latest_mtime = 0
+
+            for file_path in cache_dir.rglob('*'):
+                if file_path.is_file():
+                    cache_info['total_files'] += 1
+                    total_size += file_path.stat().st_size
+                    latest_mtime = max(latest_mtime, file_path.stat().st_mtime)
+
+            cache_info['total_size_mb'] = round(total_size / (1024 * 1024), 2)
+            if latest_mtime > 0:
+                cache_info['last_updated'] = datetime.fromtimestamp(latest_mtime).isoformat()
+
+        return cache_info
+
+    except Exception as e:
+        logger.error(f"Cache info retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Token Management
+
+@app.post("/api/token/validate")
+async def validate_access_token(token_data: dict):
+    """Validate Upstox access token by testing with actual trading list stocks"""
+    try:
+        token = token_data.get('token', '').strip()
+
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required")
+
+        # Use hardcoded top 10 stocks that are unlikely to ever be delisted
+        # If any one returns LTP data, token is valid
+        test_symbols = [
+            'RELIANCE',    # Reliance Industries Limited
+            'TCS',         # Tata Consultancy Services
+            'HDFCBANK',    # HDFC Bank Limited
+            'INFY',        # Infosys Limited
+            'ICICIBANK',   # ICICI Bank Limited
+            'HINDUNILVR',  # Hindustan Unilever Limited
+            'ITC',         # ITC Limited
+            'SBIN',        # State Bank of India
+            'BHARTIARTL',  # Bharti Airtel Limited
+            'BAJFINANCE'   # Bajaj Finance Limited
+        ]
+
+        from src.utils.upstox_fetcher import UpstoxFetcher
+
+        # Create fetcher and temporarily set token
+        fetcher = UpstoxFetcher()
+        original_token = getattr(fetcher, 'access_token', None)
+        fetcher.access_token = token
+
+        successful_tests = 0
+        test_results = []
+
+        try:
+            # Test token by getting LTP for sample stocks (same as list validation)
+            for symbol in test_symbols[:3]:  # Test up to 3 stocks
+                try:
+                    data = fetcher.get_latest_data(symbol)
+                    if data and 'close' in data:
+                        successful_tests += 1
+                        test_results.append(f"OK {symbol}: Rs{data['close']:.2f}")
+                    else:
+                        test_results.append(f"FAIL {symbol}: No data received")
+                except Exception as e:
+                    test_results.append(f"FAIL {symbol}: {str(e)}")
+
+            # Token is valid if we can get data for at least 1 stock
+            if successful_tests > 0:
+                # Update config with valid token
+                await update_token_in_config(token)
+
+                return {
+                    'valid': True,
+                    'successful_tests': successful_tests,
+                    'total_tests': len(test_symbols[:3]),
+                    'test_results': test_results,
+                    'message': f'Token validated successfully ({successful_tests}/{len(test_symbols[:3])} stocks)',
+                    'timestamp': datetime.now().isoformat()
+                }
+            else:
+                return {
+                    'valid': False,
+                    'error': 'Could not retrieve data for any test stocks',
+                    'test_results': test_results
+                }
+
+        except Exception as e:
+            logger.error(f"Token validation error: {e}")
+            return {
+                'valid': False,
+                'error': f'Token validation failed: {str(e)}'
+            }
+        finally:
+            # Restore original token if it existed
+            if original_token:
+                fetcher.access_token = original_token
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def update_token_in_config(token: str):
+    """Update access token in config file"""
+    try:
+        import json
+        config_path = Path('config/config.json')
+
+        # Load existing config
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        else:
+            config = {}
+
+        # Update token
+        config['upstox_access_token'] = token
+
+        # Save config
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        logger.info("Access token updated in config file")
+
+    except Exception as e:
+        logger.error(f"Failed to update config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save token: {str(e)}")
+
+@app.get("/api/token/current")
+async def get_current_token():
+    """Get current access token from config file"""
+    try:
+        import json
+        config_path = Path('config/config.json')
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            token = config.get('upstox_access_token')
+            return {
+                'token': token,
+                'exists': bool(token),
+                'masked': f"{'*' * 10}...{token[-4:]}" if token else None
+            }
+        return {'token': None, 'exists': False, 'masked': None}
+    except Exception as e:
+        logger.error(f"Failed to read current token: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read token: {str(e)}")
 
 # Background task functions
 
@@ -417,7 +845,7 @@ def run_reversal_scan_background(operation_id: str, request: ScanRequest):
         })
 
 def run_breadth_analysis_background(operation_id: str, request: BreadthRequest):
-    """Background task for breadth analysis"""
+    """Background task for breadth analysis using the real BreadthCalculator"""
     try:
         logger.info(f"Starting breadth analysis: {operation_id}")
 
@@ -428,26 +856,59 @@ def run_breadth_analysis_background(operation_id: str, request: BreadthRequest):
             "message": "Initializing breadth analysis..."
         }
 
-        # Simulate the analysis process
-        import time
-        for i in range(0, 101, 8):
-            time.sleep(0.6)
+        # Use the real BreadthCalculator from the working GUI
+        from src.scanner.market_breadth_analyzer import BreadthCalculator
+
+        # Create calculator and override progress callback
+        calculator = BreadthCalculator()
+
+        # Override the progress signal to update our operation status
+        def progress_callback(message: str):
+            # Map progress messages to percentages
+            if "Found" in message and "cached stocks" in message:
+                progress = 10
+            elif "Loaded" in message and "stocks with data" in message:
+                progress = 30
+            elif "Found" in message and "cached dates" in message:
+                progress = 50
+            elif "Using" in message and "cached results" in message:
+                progress = 70
+            elif "Calculating date" in message:
+                progress = 90
+            elif "Completed breadth analysis" in message:
+                progress = 100
+            else:
+                progress = active_operations[operation_id].get("progress", 0)
+
             active_operations[operation_id].update({
-                "progress": i,
-                "message": f"Calculating breadth metrics... {i}% complete"
+                "progress": progress,
+                "message": message
             })
 
-        active_operations[operation_id].update({
-            "status": "completed",
-            "progress": 100,
-            "message": "Breadth analysis completed",
-            "result": {
-                "dates_analyzed": 25,
-                "exported_file": f"market_breadth_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            }
-        })
+        # Monkey patch the progress signal
+        original_progress = calculator.progress
+        calculator.progress = progress_callback
 
-        logger.info(f"Breadth analysis completed: {operation_id}")
+        try:
+            # Run the actual breadth calculation
+            results = calculator._calculate_breadth()
+
+            active_operations[operation_id].update({
+                "status": "completed",
+                "progress": 100,
+                "message": f"Breadth analysis completed: {len(results)} dates analyzed",
+                "result": {
+                    "dates_analyzed": len(results),
+                    "data": results,
+                    "exported_file": f"market_breadth_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                }
+            })
+
+            logger.info(f"Breadth analysis completed: {operation_id} - {len(results)} results")
+
+        finally:
+            # Restore original progress callback
+            calculator.progress = original_progress
 
     except Exception as e:
         logger.error(f"Breadth analysis background task failed: {e}")
@@ -456,12 +917,63 @@ def run_breadth_analysis_background(operation_id: str, request: BreadthRequest):
             "error": str(e)
         })
 
+def run_bhavcopy_update_background(operation_id: str):
+    """Background task for bhavcopy data update"""
+    try:
+        logger.info(f"Starting bhavcopy update: {operation_id}")
+
+        active_operations[operation_id] = {
+            "type": "bhavcopy_update",
+            "status": "running",
+            "progress": 0,
+            "message": "Initializing bhavcopy update..."
+        }
+
+        # Import and run the bhavcopy update
+        from src.utils.bhavcopy_integrator import update_latest_bhavcopy
+
+        # Update progress
+        active_operations[operation_id].update({
+            "progress": 25,
+            "message": "Downloading latest bhavcopy from NSE..."
+        })
+
+        # Run the update
+        result = update_latest_bhavcopy()
+
+        if result['status'] == 'SUCCESS':
+            active_operations[operation_id].update({
+                "status": "completed",
+                "progress": 100,
+                "message": f"Successfully updated cache with {result['date']} data",
+                "result": {
+                    "date": result['date'],
+                    "status": "success"
+                }
+            })
+            logger.info(f"Bhavcopy update completed: {operation_id} - {result['date']}")
+        else:
+            active_operations[operation_id].update({
+                "status": "error",
+                "progress": 100,
+                "error": result.get('error', 'Unknown error occurred'),
+                "message": f"Failed to update bhavcopy: {result.get('error', 'Unknown error')}"
+            })
+            logger.error(f"Bhavcopy update failed: {operation_id} - {result.get('error', 'Unknown error')}")
+
+    except Exception as e:
+        logger.error(f"Bhavcopy update background task failed: {e}")
+        active_operations[operation_id].update({
+            "status": "error",
+            "error": str(e)
+        })
+
 # WebSocket endpoint for progress updates will be added later
 
 if __name__ == "__main__":
-    print("🚀 Starting MA Stock Trader API Server...")
-    print("📡 API available at: http://localhost:8000")
-    print("📚 Documentation at: http://localhost:8000/docs")
+    print("Starting MA Stock Trader API Server...")
+    print("API available at: http://localhost:8000")
+    print("Documentation at: http://localhost:8000/docs")
 
     uvicorn.run(
         "server:app",

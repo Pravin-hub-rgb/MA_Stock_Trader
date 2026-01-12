@@ -11,9 +11,18 @@ python -m src.scanner.gui
 ```
 
 ## To run Live Trading Bot:
+
+### Continuation Trading (Gap Up Setup):
 ```
-python run_live_bot.py
+python run_live_bot.py c
 ```
+Trades stocks from `continuation_list.txt` with gap up validation and standard continuation entry logic.
+
+### Reversal Trading (Gap Down Setup):
+```
+python run_live_bot.py r
+```
+Trades stocks from `reversal_list.txt` with gap down validation and reversal-specific entry logic. Supports uptrend reversals (-u) and downtrend reversals (-d) with different sub-case strategies.
 
 ## Trading Lists Validation:
 ```

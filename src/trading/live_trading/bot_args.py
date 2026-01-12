@@ -42,8 +42,8 @@ Examples:
         'test_mode': args.test
     }
 
-    print(f"🤖 Bot Mode: {config['trading_mode'].upper()}")
+    print(f"Bot Mode: {config['trading_mode'].upper()}")
     if config['test_mode']:
-        print("🧪 TEST MODE ENABLED")
+        print("TEST MODE ENABLED")
 
     return config

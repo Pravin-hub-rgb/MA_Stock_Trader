@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Simplified Data Streamer for Live Testing
 Minimal imports to avoid conflicts with upstox_client
@@ -35,7 +36,7 @@ class SimpleStockStreamer:
             config = json.load(f)
         self.access_token = config['access_token']
 
-        logger.info(f"📊 Simple streamer monitoring {len(instrument_keys)} stocks")
+        logger.info(f"Simple streamer monitoring {len(instrument_keys)} stocks")
 
     def on_message(self, message):
         """Handle WebSocket messages"""
@@ -93,9 +94,9 @@ class SimpleStockStreamer:
 
         # Only log attempt number for reconnections, not initial connection
         if self.connection_attempts > 1:
-            print(f"✅ WebSocket RECONNECTED at {current_time} (attempt #{self.connection_attempts})")
+            print(f"WebSocket RECONNECTED at {current_time} (attempt #{self.connection_attempts})")
         else:
-            print(f"✅ WebSocket OPENED at {current_time}")
+            print(f"WebSocket OPENED at {current_time}")
 
         self.connected = True
 
@@ -105,14 +106,14 @@ class SimpleStockStreamer:
 
         try:
             self.streamer.subscribe(self.instrument_keys, "full")
-            print(f"📡 Subscribed to {len(self.instrument_keys)} instruments at {datetime.now(IST).strftime('%H:%M:%S')}")
+            print(f"Subscribed to {len(self.instrument_keys)} instruments at {datetime.now(IST).strftime('%H:%M:%S')}")
         except Exception as e:
-            print(f"❌ Subscription error at {datetime.now(IST).strftime('%H:%M:%S')}: {e}")
+            print(f"Subscription error at {datetime.now(IST).strftime('%H:%M:%S')}: {e}")
 
     def on_error(self, error):
         """WebSocket error"""
         current_time = datetime.now(IST).strftime('%H:%M:%S')
-        print(f"❌ WebSocket ERROR at {current_time}: {error}")
+        print(f"WebSocket ERROR at {current_time}: {error}")
         # Don't set connected=False here as connection might still be active
 
     def on_close(self, *args):
@@ -121,7 +122,7 @@ class SimpleStockStreamer:
         self.last_disconnection_time = datetime.now(IST)
         close_code = args[0] if args else "unknown"
         close_reason = args[1] if len(args) > 1 else "unknown"
-        print(f"⚠️ WebSocket CLOSED at {current_time} - Code: {close_code}, Reason: {close_reason}")
+        print(f"WebSocket CLOSED at {current_time} - Code: {close_code}, Reason: {close_reason}")
         self.connected = False
 
     def connect(self):
@@ -143,12 +144,12 @@ class SimpleStockStreamer:
             self.streamer.on("error", self.on_error)
             self.streamer.on("close", self.on_close)
 
-            print("🔌 Connecting to Market Data Feed...")
+            print("Connecting to Market Data Feed...")
             self.streamer.connect()
             return True
 
         except Exception as e:
-            print(f"❌ Connection failed: {e}")
+            print(f"Connection failed: {e}")
             return False
 
     def fetch_recent_data_rest(self, symbol, minutes_back=5):
@@ -166,7 +167,7 @@ class SimpleStockStreamer:
                 latest = df.iloc[-1]
                 ltp = latest.get('close', 0)
                 if ltp > 0:
-                    print(f"📊 REST recovery: {symbol} LTP ₹{ltp:.2f}")
+                    print(f"REST recovery: {symbol} LTP ₹{ltp:.2f}")
                     # Call tick handler with recovered data
                     if hasattr(self, 'tick_handler'):
                         self.tick_handler(symbol, symbol, ltp, datetime.now(IST), [])
@@ -175,28 +176,28 @@ class SimpleStockStreamer:
             return False
 
         except Exception as e:
-            print(f"❌ REST data recovery failed: {e}")
+            print(f"REST data recovery failed: {e}")
             return False
 
     def run(self):
         """Run the streamer - maintain existing connection or establish new one"""
         # If already connected, just maintain the connection
         if self.connected and self.streamer:
-            print("✅ Connection active - monitoring for signals...")
+            print("Connection active - monitoring for signals...")
             try:
                 import time
                 while self.running and self.connected:
                     time.sleep(1)
 
                 if not self.running:
-                    print("🛑 Stopped by user")
+                    print("Stopped by user")
                 else:
-                    print("⚠️ Connection lost - attempting reconnection...")
+                    print("Connection lost - attempting reconnection...")
                     # If connection was lost, try to reconnect
                     return self._reconnect_with_retries()
 
             except KeyboardInterrupt:
-                print("🛑 Stopped by user")
+                print("Stopped by user")
                 return self._cleanup_connection()
 
         # Not connected - establish new connection
@@ -210,17 +211,17 @@ class SimpleStockStreamer:
         for attempt in range(max_retries):
             try:
                 current_time = datetime.now(IST).strftime('%H:%M:%S')
-                print(f"🔌 Establishing connection (attempt {attempt + 1}/{max_retries}) at {current_time}")
+                print(f"Establishing connection (attempt {attempt + 1}/{max_retries}) at {current_time}")
 
                 if not self.connect():
                     if attempt < max_retries - 1:
-                        print(f"⏳ Retrying in {retry_delay} seconds...")
+                        print(f"Retrying in {retry_delay} seconds...")
                         import time
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Exponential backoff: 1s, 2s, 4s
                         continue
                     else:
-                        print("❌ Max connection attempts reached")
+                        print("Max connection attempts reached")
                         return False
 
                 # Connection successful - run the streaming loop
@@ -231,17 +232,17 @@ class SimpleStockStreamer:
 
                     # If we get here, either user stopped or connection was lost
                     if not self.running:
-                        print("🛑 Stopped by user")
+                        print("Stopped by user")
                     else:
-                        print("⚠️ Connection lost - per Upstox guidelines, not auto-reconnecting")
+                        print("Connection lost - per Upstox guidelines, not auto-reconnecting")
 
                 except KeyboardInterrupt:
-                    print("🛑 Stopped by user")
+                    print("Stopped by user")
                     # Clean up and re-raise
                     if self.streamer:
                         try:
                             self.streamer.disconnect()
-                            print("✅ WebSocket disconnected")
+                            print("WebSocket disconnected")
                         except:
                             pass
                     raise  # Re-raise to let caller handle it
@@ -256,19 +257,19 @@ class SimpleStockStreamer:
                 return True
 
             except Exception as e:
-                print(f"❌ Connection error: {e}")
+                print(f"Connection error: {e}")
                 if attempt < max_retries - 1:
-                    print(f"⏳ Retrying in {retry_delay} seconds...")
+                    print(f"Retrying in {retry_delay} seconds...")
                     import time
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                 else:
-                    print("❌ Max retries reached - exiting")
+                    print("Max retries reached - exiting")
                     return False
 
     def _reconnect_with_retries(self):
         """Attempt to reconnect after connection loss"""
-        print("🔄 Attempting to reconnect...")
+        print("Attempting to reconnect...")
         return self._connect_with_retries()
 
     def _cleanup_connection(self):
@@ -276,7 +277,7 @@ class SimpleStockStreamer:
         if self.streamer:
             try:
                 self.streamer.disconnect()
-                print("✅ WebSocket disconnected")
+                print("WebSocket disconnected")
             except:
                 pass
-        return True
+            return True

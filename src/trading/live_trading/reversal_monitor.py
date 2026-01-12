@@ -86,7 +86,7 @@ class ReversalMonitor:
 
     def detect_climax_bar(self, symbol: str) -> bool:
         """
-        Detect if the latest 3-min bar is a climax bar
+        Detect if the latest 3-min bar is a climax bar (>1.5% range)
 
         Args:
             symbol: Stock symbol
@@ -98,22 +98,24 @@ class ReversalMonitor:
             return False
 
         bars = self.three_min_bars[symbol]
-        if len(bars) < 3:
+        if not bars:
             return False
 
         # Get latest bar
         latest_bar = bars[-1]
-        latest_range = latest_bar.get('high', 0) - latest_bar.get('low', 0)
+        high = latest_bar.get('high', 0)
+        low = latest_bar.get('low', 0)
 
-        # Check if it's the largest range in recent bars
-        recent_ranges = [bar.get('high', 0) - bar.get('low', 0) for bar in bars[-6:]]  # Last 6 bars
-        max_recent_range = max(recent_ranges)
+        # Calculate percentage range
+        if low > 0:
+            range_pct = ((high - low) / low) * 100
+            return range_pct > 1.5  # 1.5% threshold for climax
 
-        return latest_range >= max_recent_range
+        return False
 
     def calculate_dynamic_retracement(self, daily_low: float, current_high: float) -> float:
         """
-        Calculate 40% retracement trigger from daily range
+        Calculate 50% retracement trigger from daily range
 
         Args:
             daily_low: Lowest low of the day
@@ -126,7 +128,7 @@ class ReversalMonitor:
             return float('inf')
 
         daily_range = current_high - daily_low
-        return daily_low + (daily_range * 0.4)
+        return daily_low + (daily_range * 0.5)  # Changed from 0.4 to 0.5
 
     def should_enter_subcase_2a(self, stock_state, current_time: time) -> bool:
         """

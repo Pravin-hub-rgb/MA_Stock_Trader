@@ -4,6 +4,8 @@ import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import MarketBreadth from './pages/MarketBreadth'
 import Results from './pages/Results'
+import LiveTrading from './pages/LiveTrading'
+import CacheData from './pages/CacheData'
 
 function App() {
   return (
@@ -14,6 +16,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/breadth" element={<MarketBreadth />} />
           <Route path="/results" element={<Results />} />
+          <Route path="/live-trading" element={<LiveTrading />} />
         </Routes>
       </Container>
     </Box>

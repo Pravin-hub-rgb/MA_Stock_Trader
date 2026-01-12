@@ -36,16 +36,36 @@ class TradingListValidator:
             'reversal': {}
         }
 
-    def read_trading_list(self, file_path: str) -> List[str]:
-        """Read stock symbols from trading list file"""
+    def read_trading_list(self, file_path: str) -> List[Tuple[str, str]]:
+        """Read stock symbols from trading list file
+
+        Returns:
+            List of tuples: (display_symbol, clean_symbol)
+            display_symbol: symbol as written in file (with -u/-d suffixes)
+            clean_symbol: symbol without suffixes for Upstox validation
+        """
         try:
             with open(file_path, 'r') as f:
                 content = f.read().strip()
                 if not content:
                     return []
                 # Split by comma and clean up
-                symbols = [s.strip() for s in content.split(',') if s.strip()]
-                return symbols
+                raw_symbols = [s.strip() for s in content.split(',') if s.strip()]
+
+                processed_symbols = []
+                for raw_symbol in raw_symbols:
+                    # Handle reversal list suffixes (-u, -d)
+                    if raw_symbol.endswith('-u') or raw_symbol.endswith('-d'):
+                        clean_symbol = raw_symbol[:-2]  # Remove -u or -d
+                        display_symbol = raw_symbol
+                    else:
+                        # Continuation list - no suffix
+                        clean_symbol = raw_symbol
+                        display_symbol = raw_symbol
+
+                    processed_symbols.append((display_symbol, clean_symbol))
+
+                return processed_symbols
         except FileNotFoundError:
             logger.error(f"File not found: {file_path}")
             return []
@@ -75,14 +95,14 @@ class TradingListValidator:
 
     def validate_list(self, list_name: str, file_path: str) -> List[Tuple[str, bool, str]]:
         """Validate all stocks in a trading list"""
-        symbols = self.read_trading_list(file_path)
-        if not symbols:
+        symbol_tuples = self.read_trading_list(file_path)
+        if not symbol_tuples:
             return []
 
         results = []
-        for symbol in symbols:
-            is_valid, price_info = self.validate_stock(symbol)
-            results.append((symbol, is_valid, price_info))
+        for display_symbol, clean_symbol in symbol_tuples:
+            is_valid, price_info = self.validate_stock(clean_symbol)
+            results.append((display_symbol, is_valid, price_info))
 
         return results
 

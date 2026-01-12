@@ -7,8 +7,10 @@ import {
 } from '@mui/material'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
+import StorageIcon from '@mui/icons-material/Storage'
 import ContinuationScanner from './ContinuationScanner'
 import ReversalScanner from './ReversalScanner'
+import CacheData from './CacheData'
 
 interface ScanResult {
   symbol: string
@@ -33,12 +35,12 @@ interface ScanResult {
 }
 
 const Dashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'continuation' | 'reversal'>('continuation')
+  const [activeTab, setActiveTab] = useState<'cache' | 'continuation' | 'reversal'>('cache')
   const [continuationResults, setContinuationResults] = useState<ScanResult[]>([])
   const [reversalResults, setReversalResults] = useState<ScanResult[]>([])
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-    setActiveTab(newValue as 'continuation' | 'reversal')
+    setActiveTab(newValue as 'cache' | 'continuation' | 'reversal')
   }
 
   return (
@@ -70,6 +72,17 @@ const Dashboard: React.FC = () => {
           }}
         >
           <Tab
+            label="Cache Data"
+            value="cache"
+            icon={<StorageIcon sx={{ fontSize: 20 }} />}
+            iconPosition="start"
+            sx={{
+              minWidth: 160,
+              backgroundColor: activeTab === 'cache' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+              color: activeTab === 'cache' ? '#3b82f6 !important' : undefined,
+            }}
+          />
+          <Tab
             label="Continuation"
             value="continuation"
             icon={<TrendingUpIcon sx={{ fontSize: 20 }} />}
@@ -96,6 +109,7 @@ const Dashboard: React.FC = () => {
 
       {/* Scanner Content */}
       <Box>
+        {activeTab === 'cache' && <CacheData />}
         {activeTab === 'continuation' && (
           <ContinuationScanner
             scanResults={continuationResults}

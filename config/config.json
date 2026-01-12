@@ -8,11 +8,17 @@
       "min_adr": 0.03,
       "price_min": 100,
       "price_max": 2000,
-      "consolidation_days": [3, 7]
+      "consolidation_days": [
+        3,
+        7
+      ]
     },
     "reversal": {
-      "decline_days": [4, 7],
-      "min_decline_percent": 0.10,
+      "decline_days": [
+        4,
+        7
+      ],
+      "min_decline_percent": 0.1,
       "min_volume_days": 1,
       "volume_threshold": 1000000,
       "min_adr": 0.03,
@@ -37,5 +43,6 @@
     "font_size": 12,
     "auto_refresh": true,
     "refresh_interval": 60
-  }
+  },
+  "upstox_access_token": "eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI0SENZTkYiLCJqdGkiOiI2OTY0NjM4OTA2NDFlYzdhMDY4ZTFmMWQiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc2ODE4Njc2MSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzY4MjU1MjAwfQ.Uv6qwev-rpoInbYxg71v8wqjhbPJAgWcErb-Rkg_Yn8"
 }

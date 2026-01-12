@@ -97,3 +97,8 @@ upstox_config.json
 
 
 market_breadth_reports
+reversal_scans/
+continuation_scans/
+reports/
+bhavcopy_cache/
+temp_bhavcopy/

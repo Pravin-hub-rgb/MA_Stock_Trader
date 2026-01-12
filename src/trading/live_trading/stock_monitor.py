@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Stock Monitor - Tracks per-stock state during live trading
 Supports both continuation and reversal trading situations
@@ -10,8 +11,9 @@ import logging
 from typing import Dict, Optional, List
 import random
 
+# Add current directory to path for imports
+sys.path.append(os.path.dirname(__file__))
 from config import *
-from .reversal_monitor import ReversalMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +106,7 @@ class StockState:
 
         self.gap_validated = True
         gap_type = "up" if gap_pct >= 0 else "down"
-        logger.info(f"[{self.symbol}] ✅ Gap {gap_type} validated: {gap_pct:.1%} ({self.situation})")
+        logger.info(f"[{self.symbol}] Gap {gap_type} validated: {gap_pct:.1%} ({self.situation})")
         return True
 
     def check_low_violation(self) -> bool:
@@ -133,7 +135,7 @@ class StockState:
         self.entry_sl = self.entry_high * (1 - ENTRY_SL_PCT)
 
         self.entry_ready = True
-        logger.info(f"[{self.symbol}] 🎯 Entry prepared - High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f}")
+        logger.info(f"[{self.symbol}] Entry prepared - High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f}")
 
     def check_entry_signal(self, price: float) -> bool:
         """Check if price has broken above the entry high"""
@@ -148,7 +150,7 @@ class StockState:
         self.entry_time = timestamp
         self.entered = True
 
-        logger.info(f"[{self.symbol}] 🚀 ENTRY at {price:.2f} (target was {self.entry_high:.2f})")
+        logger.info(f"[{self.symbol}] ENTRY at {price:.2f} (target was {self.entry_high:.2f})")
 
     def check_exit_signal(self, price: float) -> bool:
         """Check if stop loss hit"""
@@ -166,13 +168,13 @@ class StockState:
         if self.entry_price:
             self.pnl = (price - self.entry_price) / self.entry_price * 100
 
-        logger.info(f"[{self.symbol}] 🚪 EXIT at {price:.2f} | P&L: {self.pnl:.2f}% | Reason: {reason}")
+        logger.info(f"[{self.symbol}] EXIT at {price:.2f} | P&L: {self.pnl:.2f}% | Reason: {reason}")
 
     def reject(self, reason: str):
         """Mark stock as rejected"""
         self.is_active = False
         self.rejection_reason = reason
-        logger.info(f"[{self.symbol}] ❌ REJECTED: {reason}")
+        logger.info(f"[{self.symbol}] REJECTED: {reason}")
 
     def get_status(self) -> Dict:
         """Get current status for logging"""
@@ -210,14 +212,14 @@ class StockMonitor:
             return
 
         self.stocks[instrument_key] = StockState(symbol, instrument_key, previous_close, situation)
-        logger.info(f"📊 Added {symbol} ({situation}) to monitor (prev close: {previous_close:.2f})")
+        logger.info(f"Added {symbol} ({situation}) to monitor (prev close: {previous_close:.2f})")
 
     def remove_stock(self, instrument_key: str):
         """Remove a stock from monitoring"""
         if instrument_key in self.stocks:
             symbol = self.stocks[instrument_key].symbol
             del self.stocks[instrument_key]
-            logger.info(f"🗑️ Removed {symbol} from monitor")
+            logger.info(f"Removed {symbol} from monitor")
 
     def get_active_stocks(self) -> List[StockState]:
         """Get list of currently active stocks"""
@@ -236,52 +238,50 @@ class StockMonitor:
 
         # Log qualified stocks
         if qualified:
-            logger.info(f"✅ QUALIFIED STOCKS ({len(qualified)}):")
+            logger.info(f"QUALIFIED STOCKS ({len(qualified)}):")
             for stock in qualified:
                 gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) if stock.open_price and stock.previous_close else 0
                 entry_high = stock.entry_high if stock.entry_high else 0
                 entry_sl = stock.entry_sl if stock.entry_sl else 0
-                logger.info(f"   {stock.symbol}: Gap {gap_pct:+.1f}%, Entry: ₹{entry_high:.2f}, SL: ₹{entry_sl:.2f}")
+                logger.info(f"   {stock.symbol}: Gap {gap_pct:+.1f}%, Entry: Rs{entry_high:.2f}, SL: Rs{entry_sl:.2f}")
 
         # Log ALL stocks with detailed status (including rejected)
-        logger.info(f"📊 STOCK QUALIFICATION STATUS ({len(self.stocks)} total):")
+        logger.info(f"STOCK QUALIFICATION STATUS ({len(self.stocks)} total):")
         for stock in self.stocks.values():
             status_parts = []
 
             # Opening price status
             if stock.open_price is None:
-                status_parts.append("❌ No opening price")
+                status_parts.append("No opening price")
             else:
                 gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close * 100) if stock.previous_close else 0
-                status_parts.append(f"📈 Open: ₹{stock.open_price:.2f} ({gap_pct:+.1f}%)")
+                status_parts.append(f"Open: Rs{stock.open_price:.2f} ({gap_pct:+.1f}%)")
 
             # Gap validation status
             if stock.gap_validated:
-                status_parts.append("✅ Gap validated")
-            elif stock.rejection_reason and "Gap" in stock.rejection_reason:
-                status_parts.append(f"❌ {stock.rejection_reason}")
+                status_parts.append("Gap validated")
+                status_parts.append(f"REJECTED: {stock.rejection_reason}")
             else:
-                status_parts.append("❓ Gap not validated")
+                status_parts.append("Gap not validated")
 
             # Low violation status
             if stock.low_violation_checked:
-                status_parts.append("✅ Low violation checked")
-            elif stock.rejection_reason and "Low violation" in stock.rejection_reason:
-                status_parts.append(f"❌ {stock.rejection_reason}")
+                status_parts.append("Low violation checked")
+                status_parts.append(f"REJECTED: {stock.rejection_reason}")
             else:
-                status_parts.append("❓ Low not checked")
+                status_parts.append("Low not checked")
 
             # Overall status
             if stock.is_active and stock.gap_validated and stock.low_violation_checked:
-                overall = "✅ QUALIFIED"
+                overall = "QUALIFIED"
             else:
-                overall = "❌ REJECTED"
+                overall = "REJECTED"
 
             logger.info(f"   {stock.symbol}: {overall}")
             for part in status_parts:
                 logger.info(f"      {part}")
 
-        logger.info(f"📊 SUMMARY: {len(qualified)} qualified, {len(rejected)} rejected")
+        logger.info(f"SUMMARY: {len(qualified)} qualified, {len(rejected)} rejected")
         return qualified
 
     def process_candle_data(self, instrument_key: str, symbol: str, ohlc_list: list):
@@ -293,7 +293,7 @@ class StockMonitor:
 
         # Debug: Log OHLC data received
         if ohlc_list:
-            logger.info(f"[{symbol}] 📊 Received {len(ohlc_list)} OHLC candles")
+            logger.info(f"[{symbol}] Received {len(ohlc_list)} OHLC candles")
             for i, candle_data in enumerate(ohlc_list[:3]):  # Log first 3 candles
                 if isinstance(candle_data, dict):
                     logger.info(f"[{symbol}] Candle {i}: {candle_data}")
@@ -307,13 +307,13 @@ class StockMonitor:
 
                 # Debug: Log candle processing
                 open_price = float(candle_data.get('open', 0))
-                logger.info(f"[{symbol}] 📈 Processing I1 candle: time={candle_time.strftime('%H:%M:%S')}, open={open_price:.2f}")
+                logger.info(f"[{symbol}] Processing I1 candle: time={candle_time.strftime('%H:%M:%S')}, open={open_price:.2f}")
 
                 # Use the first valid 1-minute candle we receive for this stock
                 # In live trading, this will be the market open candle
                 if stock.open_price is None and open_price > 0:
                     stock.set_open_price(open_price)
-                    logger.info(f"[{symbol}] ✅ OPEN PRICE SET: {open_price:.2f} (prev close: {stock.previous_close:.2f})")
+                    logger.info(f"[{symbol}] OPEN PRICE SET: {open_price:.2f} (prev close: {stock.previous_close:.2f})")
 
                     # Validate gap once we have the reliable opening price
                     stock.validate_gap()
@@ -338,14 +338,9 @@ class StockMonitor:
             self.session_start_time = timestamp
 
     def check_violations(self):
-        """Check for low violations during confirmation window"""
-        current_time = datetime.now().time()
-
-        if not (MARKET_OPEN <= current_time <= ENTRY_DECISION_TIME):
-            return
-
+        """Check for low violations for opened stocks that haven't been checked yet"""
         for stock in self.get_active_stocks():
-            if stock.gap_validated and not stock.low_violation_checked:
+            if stock.gap_validated and not stock.low_violation_checked and stock.open_price:
                 stock.check_low_violation()
 
     def accumulate_volume(self, instrument_key: str, volume: float):
@@ -390,7 +385,7 @@ class StockMonitor:
         if not TEST_MODE or not SIMULATE_OPENING_PRICES:
             return
 
-        logger.info("🧪 TEST MODE: Simulating opening prices for all stocks")
+        logger.info("TEST MODE: Simulating opening prices for all stocks")
 
         for stock in self.stocks.values():
             # Generate realistic opening prices based on previous close
@@ -405,14 +400,14 @@ class StockMonitor:
             stock.set_open_price(open_price)
             stock.validate_gap()
 
-            logger.info(f"🧪 {stock.symbol}: Simulated open ₹{open_price:.2f} (gap: {gap_pct:+.1%})")
+            logger.info(f"TEST: {stock.symbol}: Simulated open Rs{open_price:.2f} (gap: {gap_pct:+.1%})")
 
     def generate_test_ticks(self):
         """Generate fake tick data for testing qualification logic"""
         if not TEST_MODE:
             return
 
-        logger.info("🧪 TEST MODE: Generating simulated tick data")
+        logger.info("TEST MODE: Generating simulated tick data")
 
         # Generate some ticks for each stock to simulate market activity
         for instrument_key, stock in self.stocks.items():
@@ -430,14 +425,14 @@ class StockMonitor:
                     # Process the simulated tick
                     self.process_tick(instrument_key, stock.symbol, tick_price, timestamp)
 
-                    logger.debug(f"🧪 {stock.symbol}: Simulated tick ₹{tick_price:.2f}")
+                    logger.debug(f"TEST: {stock.symbol}: Simulated tick Rs{tick_price:.2f}")
 
     def run_test_sequence(self):
         """Run complete test sequence for qualification testing"""
         if not TEST_MODE:
             return
 
-        logger.info("🧪 TEST MODE: Running qualification test sequence")
+        logger.info("TEST MODE: Running qualification test sequence")
 
         # Step 1: Simulate market open
         self.simulate_opening_prices()
@@ -457,7 +452,7 @@ class StockMonitor:
         # Step 4: Prepare entries
         self.prepare_entries()
 
-        logger.info("🧪 TEST MODE: Qualification sequence complete")
+        logger.info("TEST MODE: Qualification sequence complete")
 
     def get_summary(self) -> Dict:
         """Get summary of all stocks"""

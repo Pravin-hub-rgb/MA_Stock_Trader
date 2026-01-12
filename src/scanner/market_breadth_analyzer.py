@@ -69,8 +69,13 @@ class BreadthCacheManager:
         """Check if breadth needs to be recalculated for this date"""
         date_key = target_date.strftime('%Y-%m-%d')
 
-        # Only recalculate if we don't have cached data for this date
-        # We don't check stock count differences since breadth counts are much smaller than total stocks
+        # Always recalculate recent dates to ensure latest data
+        # Only keep cached results for dates more than 7 days old
+        today = date.today()
+        if (today - target_date).days <= 7:
+            return True
+
+        # For older dates, check if we have cached data
         return date_key not in self.breadth_cache
 
 
@@ -134,8 +139,11 @@ class BreadthCalculator(QThread):
         for df in all_stocks_data.values():
             all_dates.update(df.index.date)
 
+        # Filter to only weekdays (Monday=0 to Friday=4, exclude Saturday=5, Sunday=6)
+        weekday_dates = {d for d in all_dates if d.weekday() < 5}
+
         # Sort dates
-        sorted_dates = sorted(all_dates)
+        sorted_dates = sorted(weekday_dates)
 
         # Check cache and calculate only needed dates
         breadth_results = {}
@@ -202,6 +210,34 @@ class BreadthCalculator(QThread):
         # Convert dict to list and sort by date (most recent first)
         breadth_results_list = list(breadth_results.values())
         breadth_results_list.sort(key=lambda x: x['date'], reverse=True)
+
+        # Always include the most recent trading day, even if incomplete
+        today = date.today()
+        recent_dates = []
+        for i in range(7):  # Check last 7 days
+            check_date = today - timedelta(days=i)
+            if check_date.weekday() < 5:  # Weekday
+                recent_dates.append(check_date)
+
+        for recent_date in recent_dates:
+            date_key = recent_date.strftime('%Y-%m-%d')
+            if date_key not in breadth_results:
+                # Try to calculate this date even if it might be incomplete
+                counts = self._calculate_date_breadth(all_stocks_data, recent_date)
+                if counts:  # At least some data
+                    result = {
+                        'date': date_key,
+                        'up_4_5_pct': counts['up_4_5'],
+                        'down_4_5_pct': counts['down_4_5'],
+                        'up_20_pct_5d': counts['up_20_5d'],
+                        'down_20_pct_5d': counts['down_20_5d'],
+                        'above_20ma': counts['above_20ma'],
+                        'below_20ma': counts['below_20ma'],
+                        'above_50ma': counts['above_50ma'],
+                        'below_50ma': counts['below_50ma']
+                    }
+                    breadth_results[date_key] = result
+                    breadth_results_list.insert(0, result)  # Add to front
 
         self.progress.emit(f"Completed breadth analysis: {len(breadth_results_list)} total dates (cached + calculated)")
         return breadth_results_list

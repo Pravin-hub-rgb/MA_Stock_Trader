@@ -9,7 +9,8 @@ import sys
 from datetime import datetime
 from typing import Dict, Optional, List
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add current directory to path for imports
+sys.path.append(os.path.dirname(__file__))
 from config import *
 from stock_monitor import StockState
 

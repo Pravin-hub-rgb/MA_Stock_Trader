@@ -198,6 +198,15 @@ const Navbar: React.FC = () => {
               Market Breadth
             </NavButton>
           </Link>
+
+          <Link to="/live-trading" style={{ textDecoration: 'none' }}>
+            <NavButton
+              selected={isActive('/live-trading')}
+              startIcon={<TrendingUpIcon sx={{ fontSize: 20 }} />}
+            >
+              Live Trading
+            </NavButton>
+          </Link>
         </NavigationContainer>
 
         {/* Logo/Brand */}

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Stock Scorer - Calculates quality scores for stock selection
 Based on ADR, Price, and Early Volume parameters
@@ -52,14 +53,14 @@ class StockScorer:
                 ltp_data = upstox_fetcher.get_ltp_data(symbol)
                 if ltp_data and 'ltp' in ltp_data:
                     current_price = float(ltp_data['ltp'])
-                    logger.debug(f"[{symbol}] Price loaded: ₹{current_price:.2f}")
+                    logger.debug(f"[{symbol}] Price loaded: Rs{current_price:.2f}")
                 else:
                     # Fallback for test mode or when LTP unavailable
                     from config import TEST_MODE
                     if TEST_MODE:
                         # Use previous close as fallback for test mode
                         current_price = float(prev_closes.get(symbol, 500.0))
-                        logger.debug(f"[{symbol}] Using fallback price (test mode): ₹{current_price:.2f}")
+                        logger.debug(f"[{symbol}] Using fallback price (test mode): Rs{current_price:.2f}")
                     else:
                         raise ValueError(f"No LTP data available for {symbol}")
 
@@ -77,7 +78,7 @@ class StockScorer:
                 }
 
                 # Log all metadata loads
-                logger.info(f"📊 {symbol}: ADR {current_adr:.1f}%, Price ₹{current_price:.0f}, Vol Baseline {volume_baseline:,.0f}")
+                logger.info(f"{symbol}: ADR {current_adr:.1f}%, Price Rs{current_price:.0f}, Vol Baseline {volume_baseline:,.0f}")
 
             except Exception as e:
                 logger.error(f"Failed to load metadata for {symbol}: {e}")

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Selection Engine - Selects which stocks to trade from qualified candidates
 """
@@ -7,8 +8,10 @@ import os
 import logging
 from typing import List, Dict, Optional
 
-from config import *
-from .stock_monitor import StockState
+# Add current directory to path for imports
+sys.path.append(os.path.dirname(__file__))
+from config import MAX_STOCKS_TO_TRADE
+from stock_monitor import StockState
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +82,12 @@ class SelectionEngine:
         """Select stocks by quality score (ADR + Price + Volume)"""
         try:
             # Lazy import to avoid circular dependencies
-            from stock_scorer import stock_scorer
+            import sys
+            import os
+            parent_dir = os.path.dirname(os.path.dirname(__file__))
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+            from scanner.stock_scorer import stock_scorer
 
             # Get symbols and calculate early volumes from current monitoring
             symbols = [stock.symbol for stock in stocks]
@@ -96,7 +104,7 @@ class SelectionEngine:
                 symbol = score_data['symbol']
                 if symbol in symbol_to_stock:
                     selected_stocks.append(symbol_to_stock[symbol])
-                    logger.info(f"🎯 Selected {symbol}: Score {score_data['total_score']} "
+                    logger.info(f"Selected {symbol}: Score {score_data['total_score']} "
                                f"(ADR: {score_data['adr_score']}, Price: {score_data['price_score']}, "
                                f"Volume: {score_data['volume_score']})")
 

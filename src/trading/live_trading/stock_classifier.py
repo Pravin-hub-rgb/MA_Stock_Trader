@@ -26,14 +26,14 @@ class StockClassifier:
                 content = f.read().strip()
                 symbols = [s.strip() for s in content.split(',') if s.strip()]
 
-            print(f"📋 Loaded {len(symbols)} continuation stocks: {symbols}")
+            print(f"Loaded {len(symbols)} continuation stocks: {symbols}")
             return symbols
 
         except FileNotFoundError:
-            print(f"❌ Continuation list not found: {filepath}")
+            print(f"Continuation list not found: {filepath}")
             return []
         except Exception as e:
-            print(f"❌ Error loading continuation list: {e}")
+            print(f"Error loading continuation list: {e}")
             return []
 
     def load_reversal_stocks(self) -> Tuple[List[str], Dict[str, str]]:
@@ -61,13 +61,13 @@ class StockClassifier:
                     symbol = raw_symbol[:-2]  # Remove -d
                     situation = 'reversal_s2'  # Downtrend reversal
                 else:
-                    print(f"⚠️ Warning: {raw_symbol} has no -u/-d flag, skipping")
+                    print(f"Warning: {raw_symbol} has no -u/-d flag, skipping")
                     continue
 
                 symbols.append(symbol)
                 situations[symbol] = situation
 
-            print(f"📋 Loaded {len(symbols)} reversal stocks:")
+            print(f"Loaded {len(symbols)} reversal stocks:")
             for symbol, situation in situations.items():
                 desc = "Uptrend (Continuation method)" if situation == 'reversal_s1' else "Downtrend (Gap down required)"
                 print(f"   {symbol}: {desc}")
@@ -75,10 +75,10 @@ class StockClassifier:
             return symbols, situations
 
         except FileNotFoundError:
-            print(f"❌ Reversal list not found: {filepath}")
+            print(f"Reversal list not found: {filepath}")
             return [], {}
         except Exception as e:
-            print(f"❌ Error loading reversal list: {e}")
+            print(f"Error loading reversal list: {e}")
             return [], {}
 
     def get_stock_configuration(self, mode: str) -> Dict:
