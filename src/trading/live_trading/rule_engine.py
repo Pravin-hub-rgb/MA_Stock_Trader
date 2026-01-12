@@ -7,9 +7,8 @@ import os
 import logging
 from typing import List, Dict, Optional
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from stock_monitor import StockState
 from config import *
+from .stock_monitor import StockState
 
 logger = logging.getLogger(__name__)
 

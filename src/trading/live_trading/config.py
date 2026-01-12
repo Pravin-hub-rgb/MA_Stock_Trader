@@ -6,8 +6,8 @@ All trading parameters in one place for easy modification
 from datetime import time
 
 # === MARKET TIMING ===
-MARKET_OPEN = time(15, 13)            # Market open time (9:15 AM IST)
-ENTRY_DECISION_TIME = time(15, 14)    # Entry decision time (9:43 AM IST)
+MARKET_OPEN = time(9, 15)            # Market open time (9:15 AM IST)
+ENTRY_DECISION_TIME = time(9, 20)    # Entry decision time (9:20 AM IST)
 
 # Auto-calculated (don't modify)
 PREP_END = time(MARKET_OPEN.hour, MARKET_OPEN.minute, max(0, MARKET_OPEN.second - 30))

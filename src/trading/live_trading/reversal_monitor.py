@@ -37,13 +37,17 @@ class ReversalMonitor:
         if situation in ['continuation', 'reversal_s1']:
             # Gap up required (0-5%)
             if gap_pct < 0:
-                return False, ".1f"            if gap_pct > 0.05:
-                return False, ".1f"            return True, ".1f"
+                return False, f"Gap down: {gap_pct:.1f} (need gap up for {situation})"
+            if gap_pct > 0.05:
+                return False, f"Gap up too high: {gap_pct:.1f} > 5%"
+            return True, f"Gap up validated: {gap_pct:.1f}"
         elif situation == 'reversal_s2':
             # Gap down required (-5% to 0%)
             if gap_pct > 0:
-                return False, ".1f"            if gap_pct < -0.05:
-                return False, ".1f"            return True, ".1f"
+                return False, f"Gap up: {gap_pct:.1f} (need gap down for reversal_s2)"
+            if gap_pct < -0.05:
+                return False, f"Gap down too low: {gap_pct:.1f} < -5%"
+            return True, f"Gap down validated: {gap_pct:.1f}"
         else:
             return False, f"Unknown situation: {situation}"
 
@@ -142,8 +146,8 @@ class ReversalMonitor:
         if not (market_open <= current_time <= five_min_later):
             return False
 
-        # Must have gap down validated and open = low
-        if not (hasattr(stock_state, 'gap_up_validated') and stock_state.gap_up_validated):
+        # Must have gap validated and open = low
+        if not (hasattr(stock_state, 'gap_validated') and stock_state.gap_validated):
             return False
 
         return self.detect_subcase_2a(stock_state.open_price, stock_state.daily_low)

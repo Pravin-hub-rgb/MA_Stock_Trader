@@ -11,7 +11,7 @@ from typing import Dict, Optional, List
 import random
 
 from config import *
-from reversal_monitor import ReversalMonitor
+from .reversal_monitor import ReversalMonitor
 
 logger = logging.getLogger(__name__)
 
