@@ -368,8 +368,8 @@ async def start_live_trading(data: dict, background_tasks: BackgroundTasks):
                                     'timestamp': datetime.now().isoformat(),
                                     'message': line.strip()
                                 })
-                                # Keep only last 100 logs
-                                if len(bot_logs) > 100:
+                                # Keep only last 300 logs
+                                if len(bot_logs) > 300:
                                     bot_logs.pop(0)
 
                     # Read stderr
@@ -467,7 +467,7 @@ async def get_live_trading_logs():
     global bot_logs
 
     return {
-        'logs': bot_logs[-50:],  # Return last 50 logs
+        'logs': bot_logs,  # Return all logs
         'is_running': bot_process is not None and bot_process.poll() is None,
         'total_logs': len(bot_logs),
         'timestamp': datetime.now().isoformat()
@@ -519,12 +519,14 @@ async def get_data_update_status(operation_id: str):
 
 @app.get("/api/data/cache-info")
 async def get_cache_info():
-    """Get information about cached data"""
+    """Get information about cached stock data"""
     try:
-        import os
         from pathlib import Path
+        from src.utils.cache_manager import cache_manager
 
-        cache_dir = Path('bhavcopy_cache')
+        # Look at the data/cache directory where processed stock data is stored
+        # (this is where the market breadth analyzer loads stocks from)
+        cache_dir = Path('data/cache')
         cache_info = {
             'cache_exists': cache_dir.exists(),
             'total_files': 0,
@@ -534,22 +536,197 @@ async def get_cache_info():
 
         if cache_dir.exists():
             total_size = 0
-            latest_mtime = 0
 
-            for file_path in cache_dir.rglob('*'):
+            # Count only .pkl files (processed stock data)
+            for file_path in cache_dir.glob('*.pkl'):
                 if file_path.is_file():
                     cache_info['total_files'] += 1
                     total_size += file_path.stat().st_size
-                    latest_mtime = max(latest_mtime, file_path.stat().st_mtime)
 
             cache_info['total_size_mb'] = round(total_size / (1024 * 1024), 2)
-            if latest_mtime > 0:
-                cache_info['last_updated'] = datetime.fromtimestamp(latest_mtime).isoformat()
+
+            # Get the actual latest data date from cache (not file modification time)
+            latest_data_date = cache_manager.get_latest_cache_date()
+            if latest_data_date:
+                # Convert to ISO format for frontend
+                cache_info['last_updated'] = latest_data_date.isoformat()
 
         return cache_info
 
     except Exception as e:
         logger.error(f"Cache info retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Stock List Management
+
+@app.get("/api/stocks/continuation")
+async def get_continuation_stocks():
+    """Get all continuation stocks with metadata"""
+    try:
+        import os
+        import json
+        from pathlib import Path
+
+        metadata_file = Path('src/trading/continuation_list_metadata.json')
+
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                data = json.load(f)
+                stocks = data.get('stocks', [])
+                # Sort by added_at descending (newest first)
+                stocks.sort(key=lambda x: x['added_at'], reverse=True)
+                return {"stocks": stocks}
+        else:
+            return {"stocks": []}
+
+    except Exception as e:
+        logger.error(f"Failed to get continuation stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/stocks/continuation")
+async def add_continuation_stock(stock_data: dict):
+    """Add a stock to the continuation list"""
+    try:
+        import os
+        import json
+        from pathlib import Path
+        from datetime import datetime
+
+        symbol = stock_data.get('symbol', '').strip().upper()
+        source = stock_data.get('source', 'manual')
+
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+
+        metadata_file = Path('src/trading/continuation_list_metadata.json')
+
+        # Load existing data
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {"stocks": []}
+
+        # Check if stock already exists
+        existing_stock = next((s for s in data['stocks'] if s['symbol'] == symbol), None)
+        if existing_stock:
+            raise HTTPException(status_code=409, detail=f"Stock {symbol} already exists in continuation list")
+
+        # Add new stock
+        new_stock = {
+            "symbol": symbol,
+            "added_at": datetime.now().isoformat(),
+            "added_from": source
+        }
+        data['stocks'].append(new_stock)
+
+        # Save updated data
+        with open(metadata_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return {"message": f"Added {symbol} to continuation list", "stock": new_stock}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to add continuation stock: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/stocks/continuation/{symbol}")
+async def remove_continuation_stock(symbol: str):
+    """Remove a stock from the continuation list"""
+    try:
+        import json
+        from pathlib import Path
+
+        symbol = symbol.upper()
+        metadata_file = Path('src/trading/continuation_list_metadata.json')
+
+        if not metadata_file.exists():
+            raise HTTPException(status_code=404, detail="Continuation list not found")
+
+        with open(metadata_file, 'r') as f:
+            data = json.load(f)
+
+        # Find and remove the stock
+        original_length = len(data['stocks'])
+        data['stocks'] = [s for s in data['stocks'] if s['symbol'] != symbol]
+
+        if len(data['stocks']) == original_length:
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found in continuation list")
+
+        # Save updated data
+        with open(metadata_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return {"message": f"Removed {symbol} from continuation list"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to remove continuation stock: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/stocks/continuation")
+async def clear_continuation_stocks():
+    """Clear all stocks from the continuation list"""
+    try:
+        import json
+        from pathlib import Path
+
+        metadata_file = Path('src/trading/continuation_list_metadata.json')
+
+        # Create empty data structure
+        data = {"stocks": []}
+
+        # Save empty data
+        with open(metadata_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return {"message": "Cleared all stocks from continuation list"}
+
+    except Exception as e:
+        logger.error(f"Failed to clear continuation stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/stocks/continuation/finalize")
+async def finalize_continuation_list():
+    """Generate continuation_list.txt from metadata for live trading"""
+    try:
+        import json
+        from pathlib import Path
+
+        metadata_file = Path('src/trading/continuation_list_metadata.json')
+        csv_file = Path('src/trading/continuation_list.txt')
+
+        if not metadata_file.exists():
+            raise HTTPException(status_code=404, detail="No continuation stocks to finalize")
+
+        with open(metadata_file, 'r') as f:
+            data = json.load(f)
+
+        stocks = data.get('stocks', [])
+        if not stocks:
+            raise HTTPException(status_code=400, detail="No stocks in continuation list to finalize")
+
+        # Extract symbols and create CSV format
+        symbols = [stock['symbol'] for stock in stocks]
+        csv_content = ','.join(symbols)
+
+        # Write to continuation_list.txt
+        with open(csv_file, 'w') as f:
+            f.write(csv_content)
+
+        return {
+            "message": f"Finalized continuation list with {len(symbols)} stocks",
+            "symbols": symbols,
+            "file": str(csv_file)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to finalize continuation list: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Token Management
@@ -558,79 +735,15 @@ async def get_cache_info():
 async def validate_access_token(token_data: dict):
     """Validate Upstox access token by testing with actual trading list stocks"""
     try:
+        from src.utils.token_validator import token_validator
+
         token = token_data.get('token', '').strip()
 
         if not token:
             raise HTTPException(status_code=400, detail="Token is required")
 
-        # Use hardcoded top 10 stocks that are unlikely to ever be delisted
-        # If any one returns LTP data, token is valid
-        test_symbols = [
-            'RELIANCE',    # Reliance Industries Limited
-            'TCS',         # Tata Consultancy Services
-            'HDFCBANK',    # HDFC Bank Limited
-            'INFY',        # Infosys Limited
-            'ICICIBANK',   # ICICI Bank Limited
-            'HINDUNILVR',  # Hindustan Unilever Limited
-            'ITC',         # ITC Limited
-            'SBIN',        # State Bank of India
-            'BHARTIARTL',  # Bharti Airtel Limited
-            'BAJFINANCE'   # Bajaj Finance Limited
-        ]
-
-        from src.utils.upstox_fetcher import UpstoxFetcher
-
-        # Create fetcher and temporarily set token
-        fetcher = UpstoxFetcher()
-        original_token = getattr(fetcher, 'access_token', None)
-        fetcher.access_token = token
-
-        successful_tests = 0
-        test_results = []
-
-        try:
-            # Test token by getting LTP for sample stocks (same as list validation)
-            for symbol in test_symbols[:3]:  # Test up to 3 stocks
-                try:
-                    data = fetcher.get_latest_data(symbol)
-                    if data and 'close' in data:
-                        successful_tests += 1
-                        test_results.append(f"OK {symbol}: Rs{data['close']:.2f}")
-                    else:
-                        test_results.append(f"FAIL {symbol}: No data received")
-                except Exception as e:
-                    test_results.append(f"FAIL {symbol}: {str(e)}")
-
-            # Token is valid if we can get data for at least 1 stock
-            if successful_tests > 0:
-                # Update config with valid token
-                await update_token_in_config(token)
-
-                return {
-                    'valid': True,
-                    'successful_tests': successful_tests,
-                    'total_tests': len(test_symbols[:3]),
-                    'test_results': test_results,
-                    'message': f'Token validated successfully ({successful_tests}/{len(test_symbols[:3])} stocks)',
-                    'timestamp': datetime.now().isoformat()
-                }
-            else:
-                return {
-                    'valid': False,
-                    'error': 'Could not retrieve data for any test stocks',
-                    'test_results': test_results
-                }
-
-        except Exception as e:
-            logger.error(f"Token validation error: {e}")
-            return {
-                'valid': False,
-                'error': f'Token validation failed: {str(e)}'
-            }
-        finally:
-            # Restore original token if it existed
-            if original_token:
-                fetcher.access_token = original_token
+        result = token_validator.validate_token(token)
+        return result
 
     except HTTPException:
         raise
@@ -668,18 +781,8 @@ async def update_token_in_config(token: str):
 async def get_current_token():
     """Get current access token from config file"""
     try:
-        import json
-        config_path = Path('config/config.json')
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            token = config.get('upstox_access_token')
-            return {
-                'token': token,
-                'exists': bool(token),
-                'masked': f"{'*' * 10}...{token[-4:]}" if token else None
-            }
-        return {'token': None, 'exists': False, 'masked': None}
+        from src.utils.token_validator import token_validator
+        return token_validator.get_current_token()
     except Exception as e:
         logger.error(f"Failed to read current token: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to read token: {str(e)}")
@@ -942,16 +1045,27 @@ def run_bhavcopy_update_background(operation_id: str):
         result = update_latest_bhavcopy()
 
         if result['status'] == 'SUCCESS':
+            # Handle both single date (manual update) and date range (smart update) responses
+            if 'date' in result:
+                # Manual update for specific date
+                date_info = result['date']
+                message = f"Successfully updated cache with {date_info} data"
+            else:
+                # Smart update with date range
+                date_info = result.get('date_range', 'unknown range')
+                message = f"Successfully updated cache for date range: {date_info}"
+
             active_operations[operation_id].update({
                 "status": "completed",
                 "progress": 100,
-                "message": f"Successfully updated cache with {result['date']} data",
+                "message": message,
                 "result": {
-                    "date": result['date'],
-                    "status": "success"
+                    "date_info": date_info,
+                    "status": "success",
+                    "stocks_updated": result.get('total_stocks_updated', result.get('stocks_updated', 0))
                 }
             })
-            logger.info(f"Bhavcopy update completed: {operation_id} - {result['date']}")
+            logger.info(f"Bhavcopy update completed: {operation_id} - {date_info}")
         else:
             active_operations[operation_id].update({
                 "status": "error",

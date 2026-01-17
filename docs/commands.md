@@ -44,3 +44,8 @@ Downloads latest bhavcopy from NSE and integrates missing data into cache. Run a
 - Market breadth uses caching for fast subsequent runs
 - Trading list validation ensures no subscription failures during live trading
 - Price filtering (₹100-2000 range)
+
+
+
+
+taskkill /f /im python.exe

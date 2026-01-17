@@ -59,6 +59,23 @@ class CacheManager:
             else:  # If it's already a date
                 return last_date
         return None
+
+    def get_latest_cache_date(self) -> Optional[date]:
+        """Get the latest date across all cached stocks"""
+        from pathlib import Path
+
+        cache_dir = Path(self.cache_dir)
+        if not cache_dir.exists():
+            return None
+
+        latest = None
+        for pkl_file in cache_dir.glob('*.pkl'):
+            symbol = pkl_file.stem
+            last_date = self.get_last_update_date(symbol)
+            if last_date and (latest is None or last_date > latest):
+                latest = last_date
+
+        return latest
     
     def needs_update(self, symbol: str, days_back: int = 3) -> bool:
         """Check if symbol needs update (no data for last N days)"""

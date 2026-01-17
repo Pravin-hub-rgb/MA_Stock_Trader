@@ -28,38 +28,20 @@ import {
   TextField,
   Grid
 } from '@mui/material'
+import ToastNotification from '../components/ToastNotification'
 import {
   Download as DownloadIcon,
   CopyAll as CopyIcon,
-  Assessment as ResultsIcon
+  Assessment as ResultsIcon,
+  Add as AddIcon,
+  Close as CloseIcon
 } from '@mui/icons-material'
 import axios from 'axios'
-
-interface ScanResult {
-  symbol: string
-  close: number
-  // Continuation specific fields
-  sma20?: number
-  dist_to_ma_pct?: number
-  phase1_high?: number
-  phase2_low?: number
-  phase3_high?: number
-  depth_rs?: number
-  depth_pct?: number
-  // Reversal specific fields
-  period?: number
-  red_days?: number
-  green_days?: number
-  decline_percent?: number
-  trend_context?: string
-  liquidity_verified?: boolean
-  // Common fields
-  adr_pct: number
-}
+import { ScanResult } from '../contexts/AppStateContext'
 
 interface ContinuationScannerProps {
   scanResults: ScanResult[]
-  setScanResults: React.Dispatch<React.SetStateAction<ScanResult[]>>
+  setScanResults: (results: ScanResult[]) => void
 }
 
 const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, setScanResults }) => {
@@ -77,6 +59,14 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
   const [watchlistDialog, setWatchlistDialog] = useState(false)
   const [watchlists, setWatchlists] = useState<string[]>(['Default', 'Continuation', 'High Potential'])
   const [operationId, setOperationId] = useState<string | null>(null)
+  const [continuationStocks, setContinuationStocks] = useState<string[]>([])
+  const [toasts, setToasts] = useState<Array<{
+    id: string
+    message: string
+    type: 'success' | 'error' | 'warning'
+    position: number
+  }>>([])
+  const [nextToastPosition, setNextToastPosition] = useState(0)
 
   // Filter states with localStorage persistence
   const [minPrice, setMinPrice] = useState(() => loadFilterValue('minPrice', 100))
@@ -100,6 +90,23 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
   useEffect(() => {
     localStorage.setItem('continuation_maxBodySize', maxBodySize.toString())
   }, [maxBodySize])
+
+  // Fetch continuation stocks when component mounts or when scan results change
+  useEffect(() => {
+    if (scanResults.length > 0) {
+      fetchContinuationStocks()
+    }
+  }, [scanResults])
+
+  const fetchContinuationStocks = async () => {
+    try {
+      const response = await axios.get('/api/stocks/continuation')
+      const stocks = response.data.stocks || []
+      setContinuationStocks(stocks.map((stock: any) => stock.symbol))
+    } catch (error) {
+      console.error('Failed to fetch continuation stocks:', error)
+    }
+  }
 
   const runScan = async () => {
     setIsScanning(true)
@@ -227,6 +234,74 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
     const fyersFormat = selectedSymbols.map(symbol => `NSE:${symbol}-EQ`).join(',')
     navigator.clipboard.writeText(fyersFormat)
     setScanStatus(`Copied ${selectedSymbols.length} symbols to clipboard in Fyers format`)
+  }
+
+  // Handle continuation list actions (add/remove) with optimistic UI
+  const handleContinuationListAction = async (symbol: string) => {
+    const isInList = continuationStocks.includes(symbol)
+    const action = isInList ? 'remove' : 'add'
+
+    // Show optimistic success toast immediately
+    if (isInList) {
+      showToast(`✅ Removed ${symbol} from continuation list`, 'success')
+      // Update UI optimistically
+      setContinuationStocks(prev => prev.filter(s => s !== symbol))
+    } else {
+      showToast(`✅ Added ${symbol} to continuation list`, 'success')
+      // Update UI optimistically
+      setContinuationStocks(prev => [...prev, symbol])
+    }
+
+    // Make API call in background
+    try {
+      if (isInList) {
+        await axios.delete(`/api/stocks/continuation/${symbol}`)
+      } else {
+        await axios.post('/api/stocks/continuation', { symbol, source: 'scan_results' })
+      }
+    } catch (error: any) {
+      console.error('Failed to update continuation list:', error)
+
+      // Revert optimistic update on failure
+      if (isInList) {
+        setContinuationStocks(prev => [...prev, symbol])
+      } else {
+        setContinuationStocks(prev => prev.filter(s => s !== symbol))
+      }
+
+      // Show error toast
+      if (error.response?.status === 409) {
+        showToast(`⚠️ ${symbol} is already in the continuation list`, 'warning')
+      } else {
+        showToast(`❌ Failed to ${action} ${symbol} to continuation list`, 'error')
+      }
+    }
+  }
+
+  // Toast notification system - supports unlimited simultaneous toasts
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    const toastId = `toast-${Date.now()}-${Math.random()}`
+
+    // Find the lowest available position
+    const occupiedPositions = toasts.map(t => t.position).sort((a, b) => a - b)
+    let position = 0
+    for (let i = 0; i < occupiedPositions.length; i++) {
+      if (occupiedPositions[i] !== i) {
+        position = i
+        break
+      }
+    }
+    if (position === 0 && occupiedPositions.length > 0) {
+      position = occupiedPositions.length
+    }
+
+    const newToast = { id: toastId, message, type, position }
+
+    setToasts(prev => [...prev, newToast]) // No limit on toasts
+  }
+
+  const removeToast = (toastId: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== toastId))
   }
 
   return (
@@ -557,6 +632,9 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
                         </TableSortLabel>
                       </TableCell>
                     ))}
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 600, width: 80 }}>
+                      Actions
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -588,6 +666,29 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
                       <TableCell sx={{ color: '#f8fafc' }}>{(row.depth_pct || 0).toFixed(1)}%</TableCell>
                       <TableCell sx={{ color: row.adr_pct >= 3 ? '#10b981' : '#f8fafc' }}>
                         {row.adr_pct.toFixed(1)}%
+                      </TableCell>
+                      <TableCell>
+                        {continuationStocks.includes(row.symbol) ? (
+                          <Tooltip title="Remove from continuation list" placement="right">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleContinuationListAction(row.symbol)}
+                              sx={{ color: '#ef4444' }}
+                            >
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="Add to continuation list" placement="right">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleContinuationListAction(row.symbol)}
+                              sx={{ color: '#10b981' }}
+                            >
+                              <AddIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -648,6 +749,45 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Toast Notifications - Fixed position layout */}
+      {toasts.map((toast) => (
+        <Box
+          key={toast.id}
+          sx={{
+            position: 'fixed',
+            bottom: 24 + (toast.position * 60), // Fixed position per toast
+            left: 24,
+            zIndex: 9999, // Same z-index since they're not overlapping
+            minWidth: 450, // Wider to fit text on one line
+            maxWidth: 600, // Allow even wider if needed
+            animation: `slideInFromLeft 0.3s ease-out both`
+          }}
+        >
+          <ToastNotification
+            message={toast.message}
+            type={toast.type}
+            onClose={() => removeToast(toast.id)}
+            duration={3500}
+          />
+        </Box>
+      ))}
+
+      {/* Add custom animation for staggered slide-in */}
+      <style>
+        {`
+          @keyframes slideInFromLeft {
+            from {
+              transform: translateX(-120%);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+        `}
+      </style>
     </Box>
   )
 }

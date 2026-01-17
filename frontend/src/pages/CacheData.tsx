@@ -5,6 +5,10 @@ import {
   Button,
   Card,
   CardContent,
+  Grid,
+  Chip,
+  Alert,
+  LinearProgress,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -12,47 +16,70 @@ import {
 } from '@mui/material'
 import {
   Refresh as RefreshIcon,
-  CheckCircle as CheckCircleIcon
+  Storage as StorageIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
+  Info as InfoIcon
 } from '@mui/icons-material'
 
-interface BreadthData {
-  date: string
-  up_4_5_pct: number
-  down_4_5_pct: number
-  up_20_pct_5d: number
-  down_20_pct_5d: number
-  above_20ma: number
-  below_20ma: number
-  above_50ma: number
-  below_50ma: number
+interface CacheInfo {
+  cache_exists: boolean
+  total_files: number
+  total_size_mb: number
+  last_updated: string | null
+}
+
+interface OperationStatus {
+  type: string
+  status: 'running' | 'completed' | 'error'
+  progress: number
+  message: string
+  error?: string
+  result?: any
 }
 
 const CacheData: React.FC = () => {
-  const [breadthData, setBreadthData] = useState<BreadthData[]>([])
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null)
+  const [operationStatus, setOperationStatus] = useState<OperationStatus | null>(null)
+  const [operationId, setOperationId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
+  const [lastUpdateResult, setLastUpdateResult] = useState<any>(null)
 
-  // Load breadth data on component mount
+  // Load cache information on component mount
   useEffect(() => {
-    loadBreadthData()
+    loadCacheInfo()
   }, [])
 
-  const loadBreadthData = async () => {
+  // Poll for operation status if there's an active operation
+  useEffect(() => {
+    let interval: number | null = null
+
+    if (operationId && operationStatus?.status === 'running') {
+      interval = setInterval(() => {
+        checkOperationStatus()
+      }, 2000) // Check every 2 seconds
+    }
+
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [operationId, operationStatus?.status])
+
+  const loadCacheInfo = async () => {
     try {
-      const response = await fetch('/api/breadth/data')
+      const response = await fetch('/api/data/cache-info')
       const data = await response.json()
-      setBreadthData(data.data || [])
-      setLastUpdated(data.last_updated)
+      setCacheInfo(data)
     } catch (error) {
-      console.error('Failed to load breadth data:', error)
+      console.error('Failed to load cache info:', error)
     }
   }
 
-  const handleUpdateBreadth = async () => {
+  const handleUpdateBhavcopy = async () => {
     setIsUpdating(true)
     try {
-      const response = await fetch('/api/breadth/update', {
+      const response = await fetch('/api/data/update-bhavcopy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -61,102 +88,199 @@ const CacheData: React.FC = () => {
 
       const data = await response.json()
 
-      if (data.status === 'success') {
-        setBreadthData(data.data || [])
-        setLastUpdated(data.last_updated)
-        setShowSuccessDialog(true)
+      if (data.status === 'started') {
+        setOperationId(data.operation_id)
+        setOperationStatus({
+          type: 'bhavcopy_update',
+          status: 'running',
+          progress: 0,
+          message: 'Bhavcopy data update started'
+        })
       }
     } catch (error) {
-      console.error('Failed to update breadth data:', error)
-    } finally {
+      console.error('Failed to start bhavcopy update:', error)
       setIsUpdating(false)
+    }
+  }
+
+  const checkOperationStatus = async () => {
+    if (!operationId) return
+
+    try {
+      const response = await fetch(`/api/data/status/${operationId}`)
+      const data = await response.json()
+
+      setOperationStatus(data)
+
+      if (data.status === 'completed') {
+        setIsUpdating(false)
+        setOperationId(null)
+        setLastUpdateResult(data.result)
+        setShowSuccessDialog(true)
+        loadCacheInfo() // Refresh cache info
+      } else if (data.status === 'error') {
+        setIsUpdating(false)
+        setOperationId(null)
+      }
+    } catch (error) {
+      console.error('Failed to check operation status:', error)
+    }
+  }
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Never'
+    return new Date(dateString).toLocaleString()
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'running': return 'info'
+      case 'completed': return 'success'
+      case 'error': return 'error'
+      default: return 'default'
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed': return <CheckCircleIcon />
+      case 'error': return <ErrorIcon />
+      default: return <InfoIcon />
     }
   }
 
   return (
     <Box sx={{ minHeight: '100vh', p: 3 }}>
       <Typography variant="h4" gutterBottom sx={{ mb: 4, fontWeight: 600 }}>
-        📊 Market Breadth Data
+        📊 Cache Data Management
       </Typography>
 
-      {/* Status and Update Button */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Status: {breadthData.length > 0 ? `${breadthData.length} dates cached` : 'No data cached'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Last Updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : 'Never'}
-              </Typography>
-            </Box>
-            <Button
-              variant="contained"
-              startIcon={<RefreshIcon />}
-              onClick={handleUpdateBreadth}
-              disabled={isUpdating}
-              size="large"
-            >
-              {isUpdating ? 'Updating...' : 'Update'}
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
+      <Grid container spacing={3}>
+        {/* Cache Information Card */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <StorageIcon sx={{ mr: 1, color: 'primary.main' }} />
+                <Typography variant="h6">Cache Status</Typography>
+              </Box>
 
-      {/* Data Display */}
-      <Card>
-        <CardContent>
-          {breadthData.length > 0 ? (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Latest Breadth Data:
-              </Typography>
-              {breadthData.slice(0, 5).map((row, index) => (
-                <Box key={row.date} sx={{ mb: 2, p: 2, border: '1px solid #eee', borderRadius: 1 }}>
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    {new Date(row.date).toLocaleDateString('en-US', {
-                      month: '2-digit',
-                      day: '2-digit',
-                      year: 'numeric'
-                    })}
+              {cacheInfo ? (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Last date on cache:
                   </Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 1, mt: 1 }}>
-                    <Typography variant="body2">Up 4.5%: <strong>{row.up_4_5_pct}</strong></Typography>
-                    <Typography variant="body2">Down 4.5%: <strong>{row.down_4_5_pct}</strong></Typography>
-                    <Typography variant="body2">Up 20% 5d: <strong>{row.up_20_pct_5d}</strong></Typography>
-                    <Typography variant="body2">Down 20% 5d: <strong>{row.down_20_pct_5d}</strong></Typography>
-                    <Typography variant="body2">Above 20MA: <strong>{row.above_20ma}</strong></Typography>
-                    <Typography variant="body2">Below 20MA: <strong>{row.below_20ma}</strong></Typography>
-                    <Typography variant="body2">Above 50MA: <strong>{row.above_50ma}</strong></Typography>
-                    <Typography variant="body2">Below 50MA: <strong>{row.below_50ma}</strong></Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    {cacheInfo.last_updated ? new Date(cacheInfo.last_updated).toLocaleDateString('en-GB', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric'
+                    }) : 'No data'}
+                  </Typography>
+
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Total Files: <strong>{cacheInfo.total_files}</strong>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Cache Size: <strong>{cacheInfo.total_size_mb.toFixed(2)} MB</strong>
+                    </Typography>
                   </Box>
                 </Box>
-              ))}
-              {breadthData.length > 5 && (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  ... and {breadthData.length - 5} more dates
-                </Typography>
+              ) : (
+                <Typography>Loading cache information...</Typography>
               )}
-            </Box>
-          ) : (
-            <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-              No breadth data available. Click "Update" to calculate and cache the latest market breadth analysis.
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Update Controls Card */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Update Market Data
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Download the latest NSE bhavcopy data and update the local cache.
+                This ensures your scanner has the most recent market information.
+              </Typography>
+
+              <Button
+                variant="contained"
+                startIcon={<RefreshIcon />}
+                onClick={handleUpdateBhavcopy}
+                disabled={isUpdating}
+                fullWidth
+                sx={{ mb: 2 }}
+              >
+                {isUpdating ? 'Updating...' : 'Update Bhavcopy Data'}
+              </Button>
+
+              <Typography variant="caption" color="text.secondary">
+                Recommended: Run after market close (6 PM IST+) for same-day EOD data
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Operation Status */}
+        {operationStatus && (
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  {getStatusIcon(operationStatus.status)}
+                  <Typography variant="h6" sx={{ ml: 1 }}>
+                    Operation Status
+                  </Typography>
+                  <Chip
+                    label={operationStatus.status.toUpperCase()}
+                    color={getStatusColor(operationStatus.status)}
+                    size="small"
+                    sx={{ ml: 'auto' }}
+                  />
+                </Box>
+
+                <Typography variant="body1" sx={{ mb: 2 }}>
+                  {operationStatus.message}
+                </Typography>
+
+                {operationStatus.status === 'running' && (
+                  <LinearProgress
+                    variant="determinate"
+                    value={operationStatus.progress}
+                    sx={{ mb: 1 }}
+                  />
+                )}
+
+                {operationStatus.error && (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    {operationStatus.error}
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+      </Grid>
 
       {/* Success Dialog */}
       <Dialog open={showSuccessDialog} onClose={() => setShowSuccessDialog(false)}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center' }}>
           <CheckCircleIcon sx={{ mr: 1, color: 'success.main' }} />
-          Update Successful
+          Data Update Successful
         </DialogTitle>
         <DialogContent>
           <Typography>
-            Market breadth data has been successfully updated and cached.
+            Cache has been successfully updated with the latest market data.
           </Typography>
+          {lastUpdateResult && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Updated data for: {lastUpdateResult.date}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowSuccessDialog(false)}>OK</Button>

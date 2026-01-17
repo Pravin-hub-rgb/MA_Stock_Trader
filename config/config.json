@@ -43,6 +43,5 @@
     "font_size": 12,
     "auto_refresh": true,
     "refresh_interval": 60
-  },
-  "upstox_access_token": "eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI0SENZTkYiLCJqdGkiOiI2OTY0NjM4OTA2NDFlYzdhMDY4ZTFmMWQiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc2ODE4Njc2MSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzY4MjU1MjAwfQ.Uv6qwev-rpoInbYxg71v8wqjhbPJAgWcErb-Rkg_Yn8"
+  }
 }

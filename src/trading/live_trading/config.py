@@ -6,8 +6,8 @@ All trading parameters in one place for easy modification
 from datetime import time
 
 # === MARKET TIMING ===
-MARKET_OPEN = time(15, 6)            # Market open time (current time for testing)
-ENTRY_DECISION_TIME = time(14, 8)    # Entry decision time (9:20 AM IST)
+MARKET_OPEN = time(9, 15)            # Market open time
+ENTRY_DECISION_TIME = time(9, 20)    # Entry decision time 
 
 # Auto-calculated (don't modify)
 PREP_END = time(MARKET_OPEN.hour, MARKET_OPEN.minute, max(0, MARKET_OPEN.second - 30))
@@ -15,7 +15,7 @@ CONFIRMATION_WINDOW = (ENTRY_DECISION_TIME.hour * 60 + ENTRY_DECISION_TIME.minut
 ENTRY_PREP_TIME = ENTRY_DECISION_TIME
 
 # === TRADING PARAMETERS ===
-MAX_STOCKS_TO_TRADE = 2        # Maximum stocks to trade per day
+MAX_STOCKS_TO_TRADE = 5        # Maximum stocks to trade per day
 
 # Gap up conditions
 GAP_UP_MIN = 0.0               # Minimum gap up % (above previous close)

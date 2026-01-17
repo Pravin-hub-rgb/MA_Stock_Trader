@@ -318,26 +318,45 @@ class LiveTradingOrchestrator:
             logger.info("=== LIVE TRADING BOT STARTED ===")
 
             # Prep phase
-            if not self.prep_phase():
-                logger.error("Prep phase failed")
+            logger.info("Starting prep phase...")
+            prep_result = self.prep_phase()
+            logger.info(f"Prep phase completed with result: {prep_result}")
+
+            if not prep_result:
+                logger.error("Prep phase failed - exiting")
                 return
+
+            logger.info("Prep phase successful, proceeding to timing logic...")
 
             # Wait until prep end time (convert to string comparison like options bot)
             prep_end_str = PREP_END.strftime("%H:%M")
             current_time_str = self.get_current_time_str()
+            logger.info(f"Current time: {current_time_str}, Prep end time: {prep_end_str}")
+
             if current_time_str < prep_end_str:
                 # Calculate seconds until prep end
                 current_seconds = datetime.now(IST).hour * 3600 + datetime.now(IST).minute * 60 + datetime.now(IST).second
                 prep_seconds = PREP_END.hour * 3600 + PREP_END.minute * 60 + PREP_END.second
                 wait_seconds = prep_seconds - current_seconds
 
+                logger.info(f"Calculated wait time: {wait_seconds} seconds")
+
                 if wait_seconds > 0:
                     logger.info(f"Waiting {wait_seconds:.0f} seconds until prep end...")
                     import time
                     time.sleep(wait_seconds)
+                    logger.info("Wait completed, proceeding to trading phase...")
+                else:
+                    logger.info("No wait needed, proceeding immediately...")
+            else:
+                logger.info("Past prep end time, proceeding to trading phase...")
 
             # Trading phase
-            if not self.trading_phase():
+            logger.info("Starting trading phase...")
+            trading_result = self.trading_phase()
+            logger.info(f"Trading phase completed with result: {trading_result}")
+
+            if not trading_result:
                 logger.error("Trading phase failed")
                 return
 
@@ -345,7 +364,10 @@ class LiveTradingOrchestrator:
             logger.info("Received keyboard interrupt")
         except Exception as e:
             logger.error(f"Error in main run: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         finally:
+            logger.info("Calling cleanup...")
             self.cleanup()
 
     def cleanup(self):

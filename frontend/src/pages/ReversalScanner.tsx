@@ -34,22 +34,11 @@ import {
   Assessment as ResultsIcon
 } from '@mui/icons-material'
 import axios from 'axios'
-
-interface ScanResult {
-  symbol: string
-  close: number
-  period: number
-  red_days: number
-  green_days: number
-  decline_percent: number
-  trend_context: string
-  liquidity_verified: boolean
-  adr_percent: number
-}
+import { ScanResult } from '../contexts/AppStateContext'
 
 interface ReversalScannerProps {
   scanResults: ScanResult[]
-  setScanResults: React.Dispatch<React.SetStateAction<ScanResult[]>>
+  setScanResults: (results: ScanResult[]) => void
 }
 
 const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanResults }) => {
@@ -185,12 +174,12 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
       ...scanResults.map(row => [
         row.symbol,
         row.close.toFixed(2),
-        row.period,
-        row.red_days,
-        row.green_days,
-        (row.decline_percent * 100).toFixed(1),
-        row.trend_context.charAt(0).toUpperCase() + row.trend_context.slice(1),
-        row.adr_percent.toFixed(1)
+        row.period || 0,
+        row.red_days || 0,
+        row.green_days || 0,
+        ((row.decline_percent || 0) * 100).toFixed(1),
+        (row.trend_context || 'unknown').charAt(0).toUpperCase() + (row.trend_context || 'unknown').slice(1),
+        (row.adr_percent || 0).toFixed(1)
       ].join(','))
     ].join('\n')
 
@@ -543,19 +532,19 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
                       </TableCell>
                       <TableCell sx={{ color: '#f8fafc', fontWeight: 600 }}>{row.symbol}</TableCell>
                       <TableCell sx={{ color: '#f8fafc' }}>₹{row.close.toFixed(2)}</TableCell>
-                      <TableCell sx={{ color: '#f8fafc' }}>{row.period}</TableCell>
-                      <TableCell sx={{ color: '#f8fafc' }}>{row.red_days}</TableCell>
-                      <TableCell sx={{ color: '#f8fafc' }}>{row.green_days}</TableCell>
-                      <TableCell sx={{ color: '#f8fafc' }}>{(row.decline_percent * 100).toFixed(1)}%</TableCell>
+                      <TableCell sx={{ color: '#f8fafc' }}>{row.period || 0}</TableCell>
+                      <TableCell sx={{ color: '#f8fafc' }}>{row.red_days || 0}</TableCell>
+                      <TableCell sx={{ color: '#f8fafc' }}>{row.green_days || 0}</TableCell>
+                      <TableCell sx={{ color: '#f8fafc' }}>{((row.decline_percent || 0) * 100).toFixed(1)}%</TableCell>
                       <TableCell sx={{
-                        color: row.trend_context === 'uptrend' ? '#10b981' :
-                               row.trend_context === 'downtrend' ? '#ef4444' : '#f8fafc',
+                        color: (row.trend_context || 'unknown') === 'uptrend' ? '#10b981' :
+                               (row.trend_context || 'unknown') === 'downtrend' ? '#ef4444' : '#f8fafc',
                         fontWeight: 600
                       }}>
-                        {row.trend_context.charAt(0).toUpperCase() + row.trend_context.slice(1)}
+                        {(row.trend_context || 'unknown').charAt(0).toUpperCase() + (row.trend_context || 'unknown').slice(1)}
                       </TableCell>
-                      <TableCell sx={{ color: row.adr_percent >= 3 ? '#10b981' : '#f8fafc' }}>
-                        {row.adr_percent.toFixed(1)}%
+                      <TableCell sx={{ color: (row.adr_percent || 0) >= 3 ? '#10b981' : '#f8fafc' }}>
+                        {(row.adr_percent || 0).toFixed(1)}%
                       </TableCell>
                     </TableRow>
                   ))}

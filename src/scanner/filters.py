@@ -39,21 +39,28 @@ class FilterEngine:
             logger.error(f"Error checking base filters: {e}")
             return False
 
-    def check_volume_confirmation(self, data: pd.DataFrame, scan_type: str) -> bool:
-        """Check volume confirmation requirements"""
+    def check_liquidity_confirmation(self, data: pd.DataFrame, scan_type: str) -> bool:
+        """Check combined volume + price movement liquidity requirements"""
         try:
-            # Check if there's at least 1 day with 1M+ volume in last month
-            recent_data = data.tail(20)  # Last month
-
             params = self.continuation_params if scan_type == 'continuation' else self.reversal_params
-            volume_threshold = params['volume_threshold']
-            min_volume_days = params['min_volume_days']
+            lookback_days = params['lookback_days']
+            recent_data = data.tail(lookback_days)  # Use configurable lookback period
 
-            high_volume_days = (recent_data['volume'] >= volume_threshold).sum()
-            return high_volume_days >= min_volume_days
+            volume_threshold = params['volume_threshold']
+            movement_threshold_pct = params['movement_threshold_pct']
+            min_liquid_days = params['min_movement_days']
+
+            # Calculate absolute price movement (either direction)
+            price_movements = abs(recent_data['close'] - recent_data['open']) / recent_data['open']
+
+            # Find days with BOTH high volume AND significant price movement
+            liquid_days = (recent_data['volume'] >= volume_threshold) & \
+                         (price_movements >= movement_threshold_pct)
+
+            return liquid_days.sum() >= min_liquid_days
 
         except Exception as e:
-            logger.error(f"Error checking volume confirmation: {e}")
+            logger.error(f"Error checking liquidity confirmation: {e}")
             return False
 
     def check_rising_ma(self, data: pd.DataFrame, latest: pd.Series) -> bool:

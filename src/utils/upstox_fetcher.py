@@ -83,7 +83,13 @@ class UpstoxFetcher:
 
     def _ensure_initialized(self):
         """Ensure Upstox client is initialized before use"""
-        if not self._is_initialized:
+        # Always reload config to get latest token (in case it was updated)
+        old_token = getattr(self, 'access_token', None)
+        self._load_config()
+        new_token = self.access_token
+
+        # Re-initialize if token changed or not initialized
+        if not self._is_initialized or old_token != new_token:
             self._initialize_client()
             self._is_initialized = True
 
@@ -147,12 +153,13 @@ class UpstoxFetcher:
 
     def _fetch_single_chunk(self, instrument_key: str, start_date: date, end_date: date) -> pd.DataFrame:
         """Fetch a single chunk of historical data"""
+        # Define strings outside try block so they're available in except
+        start_str = start_date.strftime('%Y-%m-%d')
+        end_str = end_date.strftime('%Y-%m-%d')
+
         try:
             # Ensure client is initialized
             self._ensure_initialized()
-
-            start_str = start_date.strftime('%Y-%m-%d')
-            end_str = end_date.strftime('%Y-%m-%d')
 
             # Get historical candle data (without from_date since it's not supported)
             response = self.history_api.get_historical_candle_data(
@@ -177,7 +184,6 @@ class UpstoxFetcher:
                 df = df.drop('timestamp', axis=1)
 
                 # Reorder columns
-                df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
 
                 # Set date as index
                 df.set_index('date', inplace=True)

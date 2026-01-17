@@ -9,7 +9,7 @@ import requests
 import pandas as pd
 import zipfile
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -28,24 +28,13 @@ class BhavcopyIntegrator:
             'Accept': 'application/zip,*/*',
         })
 
-    def update_latest_bhavcopy(self, target_date: date = None) -> Dict:
+    def _update_for_date(self, target_date: date) -> Dict:
         """
-        Download latest bhavcopy and update all cached stocks
+        Download bhavcopy for specific date and update all cached stocks
         Returns status and statistics
         """
-        print("🚀 INTEGRATED BHAVCOPY UPDATE")
-        print("=" * 50)
-
-        start_time = datetime.now()
-
-        if target_date is None:
-            target_date = date.today()
-
-        print(f"Target Date: {target_date}")
-
         try:
             # Step 1: Download bhavcopy
-            print("\n📥 Downloading bhavcopy...")
             bhavcopy_df = self._download_bhavcopy(target_date)
 
             if bhavcopy_df is None or bhavcopy_df.empty:
@@ -55,14 +44,8 @@ class BhavcopyIntegrator:
                     'date': target_date
                 }
 
-            print(f"✅ Downloaded {len(bhavcopy_df)} stocks from bhavcopy")
-
             # Step 2: Update all cached stocks
-            print("\n🔄 Updating cache with bhavcopy data...")
             update_result = self._update_all_cached_stocks(bhavcopy_df, target_date)
-
-            end_time = datetime.now()
-            duration = end_time - start_time
 
             result = {
                 'status': 'SUCCESS',
@@ -71,44 +54,129 @@ class BhavcopyIntegrator:
                 'stocks_updated': update_result['updated'],
                 'stocks_already_had_data': update_result['already_had'],
                 'stocks_not_in_bhavcopy': update_result['not_in_bhavcopy'],
-                'duration_seconds': duration.total_seconds(),
+                'duration_seconds': 0,  # Will be set by caller
                 'success_rate': update_result['success_rate']
             }
 
             # Step 3: Generate comprehensive reports
-            print("\n📊 Generating daily reports...")
             try:
                 report_path = reporting_system.generate_daily_reports(
                     update_date=target_date,
                     bhavcopy_data=bhavcopy_df,
                     update_stats=result
                 )
-                print(f"📁 Reports saved to: {report_path}")
                 result['reports_path'] = report_path
             except Exception as e:
                 logger.warning(f"Failed to generate reports: {e}")
-                print("⚠️  Report generation failed, but update was successful")
-
-            print("\n" + "=" * 50)
-            print("UPDATE COMPLETE")
-            print(f"⏱️  Duration: {duration}")
-            print(f"📊 Bhavcopy stocks: {len(bhavcopy_df)}")
-            print(f"✅ Updated: {update_result['updated']}")
-            print(f"📅 Already had: {update_result['already_had']}")
-            print(f"⚠️  Not in bhavcopy: {update_result['not_in_bhavcopy']}")
-            print(f"📈 Success rate: {update_result['success_rate']:.1f}%")
-            if 'reports_path' in result:
-                print(f"📋 Reports: {result['reports_path']}")
 
             return result
 
         except Exception as e:
-            logger.error(f"Bhavcopy update failed: {e}")
+            logger.error(f"Bhavcopy update failed for {target_date}: {e}")
             return {
                 'status': 'ERROR',
                 'error': str(e),
                 'date': target_date
             }
+
+    def update_latest_bhavcopy(self, target_date: date = None) -> Dict:
+        """
+        Smart bhavcopy update - fills gaps from latest cache date to today
+        Returns status and statistics
+        """
+        print("🚀 INTEGRATED BHAVCOPY UPDATE")
+        print("=" * 50)
+
+        start_time = datetime.now()
+
+        if target_date is not None:
+            # Manual update for specific date
+            print(f"Manual Update - Target Date: {target_date}")
+            result = self._update_for_date(target_date)
+
+            if result['status'] == 'SUCCESS':
+                print("\n✅ Manual update completed")
+                print(f"📊 Bhavcopy stocks: {result['bhavcopy_stocks']}")
+                print(f"✅ Updated: {result['stocks_updated']}")
+                print(f"📅 Already had: {result['stocks_already_had_data']}")
+                print(f"⚠️  Not in bhavcopy: {result['stocks_not_in_bhavcopy']}")
+                print(f"📈 Success rate: {result['success_rate']:.1f}%")
+
+            return result
+
+        # Smart gap-filling update
+        print("Smart Update - Filling data gaps...")
+
+        # Find latest cache date
+        latest_cache_date = cache_manager.get_latest_cache_date()
+        if latest_cache_date is None:
+            print("No cached data found, trying today...")
+            return self._update_for_date(date.today())
+
+        start_date = latest_cache_date + timedelta(days=1)
+        end_date = date.today()
+
+        print(f"Cache latest date: {latest_cache_date}")
+        print(f"Filling gaps from: {start_date} to {end_date}")
+
+        successful_updates = []
+        total_updated = 0
+        total_already_had = 0
+        total_not_in_bhavcopy = 0
+
+        current_date = start_date
+        while current_date <= end_date:
+            print(f"\n📅 Trying date: {current_date}")
+
+            result = self._update_for_date(current_date)
+
+            if result['status'] == 'SUCCESS':
+                successful_updates.append(result)
+                total_updated += result['stocks_updated']
+                total_already_had += result['stocks_already_had_data']
+                total_not_in_bhavcopy += result['stocks_not_in_bhavcopy']
+                print(f"✅ Successfully updated {result['stocks_updated']} stocks for {current_date}")
+            elif result['status'] == 'FAILED' and 'Could not download bhavcopy' in result.get('error', ''):
+                print(f"❌ No bhavcopy data available for {current_date} (holiday/weekend)")
+            else:
+                print(f"⚠️  Failed to update for {current_date}: {result.get('error', 'Unknown error')}")
+
+            current_date += timedelta(days=1)
+
+        end_time = datetime.now()
+        duration = end_time - start_time
+
+        if not successful_updates:
+            print("\n❌ No successful updates in the date range")
+            return {
+                'status': 'FAILED',
+                'error': 'No successful updates in the date range',
+                'date_range': f"{start_date} to {end_date}",
+                'duration_seconds': duration.total_seconds()
+            }
+
+        # Return combined result
+        result = {
+            'status': 'SUCCESS',
+            'date_range': f"{start_date} to {end_date}",
+            'successful_dates': len(successful_updates),
+            'total_stocks_updated': total_updated,
+            'total_stocks_already_had_data': total_already_had,
+            'total_stocks_not_in_bhavcopy': total_not_in_bhavcopy,
+            'duration_seconds': duration.total_seconds(),
+            'results': successful_updates
+        }
+
+        print("\n" + "=" * 50)
+        print("SMART UPDATE COMPLETE")
+        print(f"⏱️  Duration: {duration}")
+        print(f"📅 Dates processed: {start_date} to {end_date}")
+        print(f"✅ Successful dates: {len(successful_updates)}")
+        print(f"📊 Total stocks updated: {total_updated}")
+        print(f"📅 Total stocks already had data: {total_already_had}")
+        print(f"⚠️  Total stocks not in bhavcopy: {total_not_in_bhavcopy}")
+
+        return result
 
     def _download_bhavcopy(self, target_date: date) -> Optional[pd.DataFrame]:
         """Download and parse bhavcopy for target date"""

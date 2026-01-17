@@ -8,39 +8,18 @@ import {
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 import StorageIcon from '@mui/icons-material/Storage'
+import ListIcon from '@mui/icons-material/List'
 import ContinuationScanner from './ContinuationScanner'
 import ReversalScanner from './ReversalScanner'
 import CacheData from './CacheData'
-
-interface ScanResult {
-  symbol: string
-  close: number
-  // Continuation specific fields
-  sma20?: number
-  dist_to_ma_pct?: number
-  phase1_high?: number
-  phase2_low?: number
-  phase3_high?: number
-  depth_rs?: number
-  depth_pct?: number
-  adr_pct?: number
-  // Reversal specific fields
-  period?: number
-  red_days?: number
-  green_days?: number
-  decline_percent?: number
-  trend_context?: string
-  liquidity_verified?: boolean
-  adr_percent?: number
-}
+import StocksList from './StocksList'
+import { useAppState, ScanResult } from '../contexts/AppStateContext'
 
 const Dashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'cache' | 'continuation' | 'reversal'>('cache')
-  const [continuationResults, setContinuationResults] = useState<ScanResult[]>([])
-  const [reversalResults, setReversalResults] = useState<ScanResult[]>([])
+  const { state, setContinuationResults, setReversalResults, updateState } = useAppState()
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-    setActiveTab(newValue as 'cache' | 'continuation' | 'reversal')
+    updateState({ activeScannerTab: newValue as 'cache' | 'continuation' | 'reversal' | 'stocks-list' })
   }
 
   return (
@@ -48,7 +27,7 @@ const Dashboard: React.FC = () => {
       {/* Scanner Tabs - Always Visible */}
       <Box sx={{ mb: 4 }}>
         <Tabs
-          value={activeTab}
+          value={state.activeScannerTab}
           onChange={handleTabChange}
           sx={{
             backgroundColor: 'rgba(255,255,255,0.02)',
@@ -78,8 +57,8 @@ const Dashboard: React.FC = () => {
             iconPosition="start"
             sx={{
               minWidth: 160,
-              backgroundColor: activeTab === 'cache' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-              color: activeTab === 'cache' ? '#3b82f6 !important' : undefined,
+              backgroundColor: state.activeScannerTab === 'cache' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+              color: state.activeScannerTab === 'cache' ? '#3b82f6 !important' : undefined,
             }}
           />
           <Tab
@@ -89,8 +68,8 @@ const Dashboard: React.FC = () => {
             iconPosition="start"
             sx={{
               minWidth: 160,
-              backgroundColor: activeTab === 'continuation' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-              color: activeTab === 'continuation' ? '#10b981 !important' : undefined,
+              backgroundColor: state.activeScannerTab === 'continuation' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+              color: state.activeScannerTab === 'continuation' ? '#10b981 !important' : undefined,
             }}
           />
           <Tab
@@ -100,8 +79,19 @@ const Dashboard: React.FC = () => {
             iconPosition="start"
             sx={{
               minWidth: 160,
-              backgroundColor: activeTab === 'reversal' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
-              color: activeTab === 'reversal' ? '#f59e0b !important' : undefined,
+              backgroundColor: state.activeScannerTab === 'reversal' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+              color: state.activeScannerTab === 'reversal' ? '#f59e0b !important' : undefined,
+            }}
+          />
+          <Tab
+            label="Stocks List"
+            value="stocks-list"
+            icon={<ListIcon sx={{ fontSize: 20 }} />}
+            iconPosition="start"
+            sx={{
+              minWidth: 160,
+              backgroundColor: state.activeScannerTab === 'stocks-list' ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+              color: state.activeScannerTab === 'stocks-list' ? '#8b5cf6 !important' : undefined,
             }}
           />
         </Tabs>
@@ -109,19 +99,20 @@ const Dashboard: React.FC = () => {
 
       {/* Scanner Content */}
       <Box>
-        {activeTab === 'cache' && <CacheData />}
-        {activeTab === 'continuation' && (
+        {state.activeScannerTab === 'cache' && <CacheData />}
+        {state.activeScannerTab === 'continuation' && (
           <ContinuationScanner
-            scanResults={continuationResults}
+            scanResults={state.continuationResults}
             setScanResults={setContinuationResults}
           />
         )}
-        {activeTab === 'reversal' && (
+        {state.activeScannerTab === 'reversal' && (
           <ReversalScanner
-            scanResults={reversalResults}
+            scanResults={state.reversalResults}
             setScanResults={setReversalResults}
           />
         )}
+        {state.activeScannerTab === 'stocks-list' && <StocksList />}
       </Box>
     </Box>
   )

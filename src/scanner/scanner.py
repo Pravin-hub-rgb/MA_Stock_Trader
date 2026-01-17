@@ -26,6 +26,9 @@ class Scanner:
         self.common_params = {
             'min_volume_days': 2,            # At least 2 days with 1M+ volume
             'volume_threshold': 1000000,     # 1M shares
+            'min_movement_days': 2,          # At least 2 days with 5%+ green candles
+            'movement_threshold_pct': 0.05,  # 5% price movement threshold
+            'lookback_days': 30,             # 30-day lookback period for volume and movement
             'min_adr': 0.03,                 # 3% ADR (same for both scans)
             'price_min': 100,                # ₹100 minimum
             'price_max': 2000,               # ₹2000 maximum
@@ -279,8 +282,8 @@ class Scanner:
                     if not self.filter_engine.check_base_filters(latest, 'continuation'):
                         continue
 
-                    # Check Volume
-                    if not self.filter_engine.check_volume_confirmation(data, 'continuation'):
+                    # Check Liquidity (combined volume + price movement)
+                    if not self.filter_engine.check_liquidity_confirmation(data, 'continuation'):
                         continue
 
                     # Check ADR
@@ -383,11 +386,11 @@ class Scanner:
                     if not base_pass:
                         continue
 
-                    # Check volume confirmation
-                    volume_pass = self.filter_engine.check_volume_confirmation(data, 'reversal')
+                    # Check Liquidity (combined volume + price movement)
+                    liquidity_pass = self.filter_engine.check_liquidity_confirmation(data, 'reversal')
                     if symbol == 'ITC':
-                        logger.info(f"ITC DEBUG: volume check pass: {volume_pass}")
-                    if not volume_pass:
+                        logger.info(f"ITC DEBUG: liquidity check pass: {liquidity_pass}")
+                    if not liquidity_pass:
                         continue
 
                     # Now run pattern analysis

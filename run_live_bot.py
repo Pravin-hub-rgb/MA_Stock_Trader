@@ -129,14 +129,16 @@ def run_live_trading_bot():
         }.get(situation, situation)
         print(f"   {symbol}: {desc}")
 
-    # Get previous closes
+    # Get previous closes using LTP API (more reliable than historical data)
     prev_closes = {}
     for symbol in symbols:
         try:
-            data = upstox_fetcher.get_latest_data(symbol)
-            if data and 'close' in data:
-                prev_closes[symbol] = data['close']
-                print(f"   OK {symbol}: Rs{data['close']:.2f}")
+            data = upstox_fetcher.get_ltp_data(symbol)
+            if data and 'cp' in data and data['cp'] is not None:
+                prev_closes[symbol] = float(data['cp'])
+                print(f"   OK {symbol}: Rs{prev_closes[symbol]:.2f}")
+            else:
+                print(f"   ERROR {symbol}: No previous close data")
         except Exception as e:
             print(f"   ERROR {symbol}: {e}")
 
@@ -270,25 +272,19 @@ def run_live_trading_bot():
         stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
         print("OK Stock metadata loaded for scoring")
 
-        if TEST_MODE:
-            print("TEST MODE: Running qualification test sequence")
-            # Run test sequence instead of waiting for market timing
-            monitor.run_test_sequence()
-            print("TEST MODE: Test sequence complete")
-        else:
-            # Wait for prep end (9:14:30)
-            prep_end = time(9, 14, 30)
-            current_time = datetime.now(IST).time()
+        # Wait for prep end (9:14:30)
+        prep_end = time(9, 14, 30)
+        current_time = datetime.now(IST).time()
 
-            if current_time < prep_end:
-                # Create timezone-aware datetime for prep_end
-                prep_datetime = datetime.combine(datetime.now(IST).date(), prep_end)
-                prep_datetime = IST.localize(prep_datetime)
-                current_datetime = datetime.now(IST)
-                wait_seconds = (prep_datetime - current_datetime).total_seconds()
-                if wait_seconds > 0:
-                    print(f"WAITING {wait_seconds:.0f} seconds until prep end...")
-                    time_module.sleep(wait_seconds)
+        if current_time < prep_end:
+            # Create timezone-aware datetime for prep_end
+            prep_datetime = datetime.combine(datetime.now(IST).date(), prep_end)
+            prep_datetime = IST.localize(prep_datetime)
+            current_datetime = datetime.now(IST)
+            wait_seconds = (prep_datetime - current_datetime).total_seconds()
+            if wait_seconds > 0:
+                print(f"WAITING {wait_seconds:.0f} seconds until prep end...")
+                time_module.sleep(wait_seconds)
 
         print("=== STARTING TRADING PHASE ===")
 

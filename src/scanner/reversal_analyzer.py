@@ -82,7 +82,7 @@ class ReversalAnalyzer:
             end_price = period_data.iloc[-1]['close']
             decline_percent = (start_price - end_price) / start_price
 
-            if decline_percent >= 0.13:  # 13% minimum
+            if decline_percent >= self.reversal_params['min_decline_percent']:  # Use configurable minimum
                 # Check liquidity
                 if self._check_liquidity(period_data):
                     if decline_percent > max_decline:
@@ -117,7 +117,7 @@ class ReversalAnalyzer:
                     end_price = period_data.iloc[-1]['close']
                     decline_percent = (start_price - end_price) / start_price
 
-                    if decline_percent >= 0.13:  # 13% minimum
+                    if decline_percent >= self.reversal_params['min_decline_percent']:  # Use configurable minimum
                         # Check liquidity (1M+ volume on any day)
                         if self._check_liquidity(period_data):
                             return True
@@ -219,4 +219,3 @@ class ReversalAnalyzer:
             return (start_price - end_price) / start_price
         except:
             return 0
-

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Tabs,
@@ -30,6 +30,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import { useAppState } from '../contexts/AppStateContext';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(3),
@@ -48,7 +49,6 @@ const ValidationResult = styled(Box)(({ theme }) => ({
   fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
   fontSize: '0.85rem',
   whiteSpace: 'pre-wrap',
-  maxHeight: '400px',
   overflowY: 'auto',
   border: '1px solid #333333',
   color: '#e0e0e0',
@@ -65,7 +65,7 @@ const StatusChip = styled(Chip)<{ status: 'success' | 'error' | 'warning' }>(({ 
 }));
 
 const LiveTrading: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'token' | 'validation' | 'trading'>('token');
+  const { state, updateState } = useAppState();
   const [validationResult, setValidationResult] = useState<string>('');
   const [isValidating, setIsValidating] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -76,6 +76,41 @@ const LiveTrading: React.FC = () => {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
+  const [isCheckingBotStatus, setIsCheckingBotStatus] = useState(true);
+  const [terminalHeight, setTerminalHeight] = useState(300);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(300);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    startYRef.current = e.clientY;
+    startHeightRef.current = terminalHeight;
+
+    // Set cursor immediately
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      const deltaY = e.clientY - startYRef.current;
+      const newHeight = Math.max(200, startHeightRef.current + deltaY);
+
+      // Direct state update without throttling for immediate response
+      setTerminalHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      // Clean up immediately
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    // Add listeners directly
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp, { passive: true });
+  }, [terminalHeight]);
 
   // Token session state
   const [accessToken, setAccessToken] = useState<string>('');
@@ -83,14 +118,15 @@ const LiveTrading: React.FC = () => {
   const [tokenValidationResult, setTokenValidationResult] = useState<string>('');
   const [tokenStatus, setTokenStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown');
   const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [isRefreshingToken, setIsRefreshingToken] = useState(false);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
-    setActiveTab(newValue as 'token' | 'validation' | 'trading');
+    updateState({ activeLiveTradingTab: newValue as 'token' | 'validation' | 'trading' });
   };
 
   const [showToken, setShowToken] = useState(false);
 
-  // Auto-check existing token on component mount
+  // Auto-check existing token and bot status on component mount
   useEffect(() => {
     const checkExistingToken = async () => {
       try {
@@ -141,8 +177,96 @@ const LiveTrading: React.FC = () => {
       }
     };
 
+    const checkBotStatus = async () => {
+      try {
+        setIsCheckingBotStatus(true);
+        const response = await fetch('/api/live-trading/logs');
+        const data = await response.json();
+
+        if (response.ok && data.is_running !== undefined) {
+          setBotStatus(data.is_running ? 'running' : 'stopped');
+          if (data.logs && data.logs.length > 0) {
+            const formattedLogs = data.logs.map((log: any) =>
+              `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`
+            );
+            setLiveLogs(formattedLogs);
+
+            // Determine trading mode from logs
+            if (data.is_running) {
+              const modeFromLogs = data.logs.find((log: any) =>
+                log.message && log.message.includes('Bot Mode:')
+              );
+              if (modeFromLogs) {
+                const modeText = modeFromLogs.message.toUpperCase();
+                if (modeText.includes('REVERSAL')) {
+                  setTradingMode('reversal');
+                } else if (modeText.includes('CONTINUATION')) {
+                  setTradingMode('continuation');
+                }
+              }
+            }
+          }
+          // Start polling if bot is running
+          if (data.is_running) {
+            startLogPolling();
+          }
+        }
+      } catch (error) {
+        console.log('Could not check bot status:', error);
+      } finally {
+        setIsCheckingBotStatus(false);
+      }
+    };
+
     checkExistingToken();
+    checkBotStatus();
   }, []);
+
+  const handleRefreshTokenStatus = async () => {
+    setIsRefreshingToken(true);
+    setTokenValidationResult('🔄 Refreshing token status...\n⏳ Re-reading config file...\n⏳ Testing Upstox API connection...\n⏳ Checking stock data access...\n⏳ Verifying token validity...\n\nPlease wait...');
+
+    try {
+      // First, get the current token from config
+      const currentResponse = await fetch('/api/token/current');
+      const currentData = await currentResponse.json();
+
+      if (currentData.exists && currentData.token) {
+        setAccessToken(currentData.token);
+
+        // Always validate the token to ensure it's working
+        const validateResponse = await fetch('/api/token/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: currentData.token })
+        });
+
+        const validateData = await validateResponse.json();
+
+        if (validateResponse.ok && validateData.valid) {
+          const stockResults = validateData.test_results ? validateData.test_results.join('\n') : '';
+          setTokenValidationResult('✅ Token Status Refreshed - Valid!\n\n' +
+            `🔑 Token: ${currentData.masked || '****...****'}\n` +
+            `📊 Test Results:\n${stockResults}\n` +
+            `⏰ Refreshed at: ${new Date().toLocaleString()}\n\n` +
+            'Token is working correctly for live trading.');
+          setTokenStatus('valid');
+        } else {
+          setTokenValidationResult(`❌ Token Status Refreshed - Invalid\n\n${validateData.error || 'Token expired or invalid'}`);
+          setTokenStatus('invalid');
+        }
+      } else {
+        setTokenValidationResult('ℹ️ Token Status Refreshed - No token configured\n\nPlease enter your Upstox access token to begin.');
+        setTokenStatus('unknown');
+        setAccessToken('');
+      }
+    } catch (error) {
+      setTokenValidationResult(`❌ Refresh Failed\n\nUnable to refresh token status: ${error}`);
+      setTokenStatus('invalid');
+    } finally {
+      setIsRefreshingToken(false);
+    }
+  };
 
   const handleValidateToken = async () => {
     if (!accessToken.trim()) {
@@ -288,7 +412,7 @@ const LiveTrading: React.FC = () => {
       {/* Live Trading Sub-navigation - Similar to Scanner */}
       <Box sx={{ mb: 4 }}>
         <Tabs
-          value={activeTab}
+          value={state.activeLiveTradingTab}
           onChange={handleTabChange}
           sx={{
             backgroundColor: 'rgba(255,255,255,0.02)',
@@ -318,8 +442,8 @@ const LiveTrading: React.FC = () => {
             iconPosition="start"
             sx={{
               minWidth: 160,
-              backgroundColor: activeTab === 'token' ? 'rgba(147, 51, 234, 0.1)' : 'transparent',
-              color: activeTab === 'token' ? '#9333ea !important' : undefined,
+              backgroundColor: state.activeLiveTradingTab === 'token' ? 'rgba(147, 51, 234, 0.1)' : 'transparent',
+              color: state.activeLiveTradingTab === 'token' ? '#9333ea !important' : undefined,
             }}
           />
           <Tab
@@ -329,8 +453,8 @@ const LiveTrading: React.FC = () => {
             iconPosition="start"
             sx={{
               minWidth: 160,
-              backgroundColor: activeTab === 'validation' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-              color: activeTab === 'validation' ? '#10b981 !important' : undefined,
+              backgroundColor: state.activeLiveTradingTab === 'validation' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+              color: state.activeLiveTradingTab === 'validation' ? '#10b981 !important' : undefined,
             }}
           />
           <Tab
@@ -340,8 +464,8 @@ const LiveTrading: React.FC = () => {
             iconPosition="start"
             sx={{
               minWidth: 160,
-              backgroundColor: activeTab === 'trading' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
-              color: activeTab === 'trading' ? '#f59e0b !important' : undefined,
+              backgroundColor: state.activeLiveTradingTab === 'trading' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+              color: state.activeLiveTradingTab === 'trading' ? '#f59e0b !important' : undefined,
             }}
           />
         </Tabs>
@@ -350,7 +474,7 @@ const LiveTrading: React.FC = () => {
       {/* Content Area */}
       <StyledPaper>
         <Box sx={{ mt: 0 }}>
-          {activeTab === 'token' && (
+          {state.activeLiveTradingTab === 'token' && (
             <Box>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                 Token Session Management
@@ -496,29 +620,56 @@ const LiveTrading: React.FC = () => {
                   </Box>
                 )}
 
-                {/* Show update button when not in update mode */}
-                {tokenStatus === 'valid' && !showUpdateForm && (
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => setShowUpdateForm(true)}
-                    sx={{
-                      mt: 2,
-                      color: '#6b7280',
-                      borderColor: '#ffffff',
-                      fontSize: '0.75rem',
-                      textTransform: 'none',
-                      borderRadius: '6px',
-                      padding: '4px 12px',
-                      '&:hover': {
-                        color: '#ffffff',
-                        borderColor: '#9333ea',
-                        backgroundColor: 'rgba(147, 51, 234, 0.1)'
-                      }
-                    }}
-                  >
-                    Update Token
-                  </Button>
+                {/* Action buttons */}
+                {!showUpdateForm && (
+                  <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={handleRefreshTokenStatus}
+                      disabled={isRefreshingToken}
+                      startIcon={isRefreshingToken ? <CircularProgress size={14} /> : null}
+                      sx={{
+                        color: '#6b7280',
+                        borderColor: '#ffffff',
+                        fontSize: '0.75rem',
+                        textTransform: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 12px',
+                        '&:hover': {
+                          color: '#ffffff',
+                          borderColor: '#10b981',
+                          backgroundColor: 'rgba(16, 185, 129, 0.1)'
+                        },
+                        '&:disabled': {
+                          color: '#6b7280',
+                          borderColor: '#374151',
+                        }
+                      }}
+                    >
+                      {isRefreshingToken ? 'Refreshing...' : 'Refresh Status'}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => setShowUpdateForm(true)}
+                      sx={{
+                        color: '#6b7280',
+                        borderColor: '#ffffff',
+                        fontSize: '0.75rem',
+                        textTransform: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 12px',
+                        '&:hover': {
+                          color: '#ffffff',
+                          borderColor: '#9333ea',
+                          backgroundColor: 'rgba(147, 51, 234, 0.1)'
+                        }
+                      }}
+                    >
+                      Update Token
+                    </Button>
+                  </Box>
                 )}
               </Box>
 
@@ -544,7 +695,7 @@ const LiveTrading: React.FC = () => {
             </Box>
           )}
 
-          {activeTab === 'validation' && (
+          {state.activeLiveTradingTab === 'validation' && (
             <Box>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                 Trading Lists Validation
@@ -604,7 +755,7 @@ const LiveTrading: React.FC = () => {
             </Box>
           )}
 
-          {activeTab === 'trading' && (
+          {state.activeLiveTradingTab === 'trading' && (
             <Box>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
                 Live Trading Control
@@ -693,20 +844,31 @@ const LiveTrading: React.FC = () => {
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
                     Status:
                   </Typography>
-                  <Chip
-                    label={botStatus.toUpperCase()}
-                    sx={{
-                      backgroundColor: botStatus === 'running' ? '#d1fae5' : '#fee2e2',
-                      color: botStatus === 'running' ? '#065f46' : '#991b1b',
-                      fontWeight: 600,
-                      fontSize: '0.875rem',
-                    }}
-                    size="small"
-                  />
-                  {botStatus === 'running' && (
-                    <Typography variant="body2" sx={{ color: '#10b981', fontWeight: 500 }}>
-                      ({tradingMode})
-                    </Typography>
+                  {isCheckingBotStatus ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} sx={{ color: '#6b7280' }} />
+                      <Typography variant="body2" sx={{ color: '#6b7280', fontWeight: 500 }}>
+                        Checking...
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <>
+                      <Chip
+                        label={botStatus.toUpperCase()}
+                        sx={{
+                          backgroundColor: botStatus === 'running' ? '#d1fae5' : '#fee2e2',
+                          color: botStatus === 'running' ? '#065f46' : '#991b1b',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                        }}
+                        size="small"
+                      />
+                      {botStatus === 'running' && (
+                        <Typography variant="body2" sx={{ color: '#10b981', fontWeight: 500 }}>
+                          ({tradingMode})
+                        </Typography>
+                      )}
+                    </>
                   )}
                 </Box>
               </Box>
@@ -717,13 +879,44 @@ const LiveTrading: React.FC = () => {
                   <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
                     Live Activity
                   </Typography>
-                  <ValidationResult sx={{ maxHeight: '300px' }}>
-                    {liveLogs.map((log, index) => (
-                      <div key={index} style={{ marginBottom: '4px' }}>
-                        {log}
-                      </div>
-                    ))}
-                  </ValidationResult>
+                  <Box sx={{ position: 'relative' }}>
+                    <ValidationResult sx={{ height: `${terminalHeight}px`, overflowY: 'auto' }}>
+                      {liveLogs.map((log, index) => (
+                        <div key={index} style={{ marginBottom: '4px' }}>
+                          {log}
+                        </div>
+                      ))}
+                    </ValidationResult>
+                    {/* Resize Handle */}
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        height: '8px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        cursor: 'ns-resize',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        '&:hover': {
+                          backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                        },
+                      }}
+                      onMouseDown={handleMouseDown}
+                    >
+                      <Box
+                        sx={{
+                          width: '30px',
+                          height: '2px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                          borderRadius: '1px',
+                        }}
+                      />
+                    </Box>
+                  </Box>
                 </Box>
               )}
 

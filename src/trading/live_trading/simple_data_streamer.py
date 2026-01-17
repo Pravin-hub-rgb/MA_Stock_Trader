@@ -41,50 +41,63 @@ class SimpleStockStreamer:
     def on_message(self, message):
         """Handle WebSocket messages"""
         try:
-            if isinstance(message, dict) and 'feeds' in message:
-                feeds = message['feeds']
-                current_time = datetime.now(IST)
-
-                for instrument_key, feed_data in feeds.items():
-                    if instrument_key not in self.stock_symbols:
-                        continue
-
-                    symbol = self.stock_symbols[instrument_key]
-
-                    # Extract LTP
-                    ltp = None
-                    ohlc_list = []
-
-                    if isinstance(feed_data, dict):
-                        if 'fullFeed' in feed_data:
-                            full_feed = feed_data['fullFeed']
-                            if isinstance(full_feed, dict) and 'marketFF' in full_feed:
-                                market_ff = full_feed['marketFF']
-                                if isinstance(market_ff, dict):
-                                    # Extract LTPC
-                                    if 'ltpc' in market_ff:
-                                        ltpc_data = market_ff['ltpc']
-                                        if isinstance(ltpc_data, dict):
-                                            ltp = ltpc_data.get('ltp')
-
-                                    # Extract OHLC candles
-                                    if 'marketOHLC' in market_ff:
-                                        market_ohlc = market_ff['marketOHLC']
-                                        if isinstance(market_ohlc, dict) and 'ohlc' in market_ohlc:
-                                            ohlc_list = market_ohlc['ohlc']
-
-                    if ltp is not None:
-                        ltp = float(ltp)
-                        # Removed tick printing for cleaner output
-
-                        # Call tick handler if set
-                        if hasattr(self, 'tick_handler'):
-                            self.tick_handler(instrument_key, symbol, ltp, current_time, ohlc_list)
+            # Handle different message formats
+            if isinstance(message, list):
+                # Sometimes messages come as a list of dicts
+                for msg_item in message:
+                    self._process_message_dict(msg_item)
+            elif isinstance(message, dict):
+                self._process_message_dict(message)
+            else:
+                # Unknown message format
+                logger.warning(f"Unknown message format: {type(message)}")
 
         except Exception as e:
             # Avoid formatting errors with None values
             error_msg = str(e) if e is not None else "Unknown error"
             logger.error(f"Message processing error: {error_msg}")
+
+    def _process_message_dict(self, message):
+        """Process a single message dictionary"""
+        if 'feeds' in message:
+            feeds = message['feeds']
+            current_time = datetime.now(IST)
+
+            for instrument_key, feed_data in feeds.items():
+                if instrument_key not in self.stock_symbols:
+                    continue
+
+                symbol = self.stock_symbols[instrument_key]
+
+                # Extract LTP
+                ltp = None
+                ohlc_list = []
+
+                if isinstance(feed_data, dict):
+                    if 'fullFeed' in feed_data:
+                        full_feed = feed_data['fullFeed']
+                        if isinstance(full_feed, dict) and 'marketFF' in full_feed:
+                            market_ff = full_feed['marketFF']
+                            if isinstance(market_ff, dict):
+                                # Extract LTPC
+                                if 'ltpc' in market_ff:
+                                    ltpc_data = market_ff['ltpc']
+                                    if isinstance(ltpc_data, dict):
+                                        ltp = ltpc_data.get('ltp')
+
+                                # Extract OHLC candles
+                                if 'marketOHLC' in market_ff:
+                                    market_ohlc = market_ff['marketOHLC']
+                                    if isinstance(market_ohlc, dict) and 'ohlc' in market_ohlc:
+                                        ohlc_list = market_ohlc['ohlc']
+
+                if ltp is not None:
+                    ltp = float(ltp)
+                    # Removed tick printing for cleaner output
+
+                    # Call tick handler if set
+                    if hasattr(self, 'tick_handler'):
+                        self.tick_handler(instrument_key, symbol, ltp, current_time, ohlc_list)
 
     def on_open(self):
         """WebSocket opened"""
