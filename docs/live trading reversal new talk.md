@@ -128,3 +128,6 @@ In your example (3 gap down = Oops candidates; 1 gap up = SS candidate; 1 flat r
 This way, no missing early SS while honoring Oops priority (wait for them, but don't pass on ready SS). Manas' vibe is environment + setup fit over rigid order—gap down gets Oops edge, but SS is standalone if no gap. If you limit to 2 trades, bot can sort by strength score (e.g., vol + reclaim speed) post-9:20.
 
 Simplifies everything—no divisions needed. Thoughts—want to add cutoff times or strength scoring next? 😄
+
+
+---
