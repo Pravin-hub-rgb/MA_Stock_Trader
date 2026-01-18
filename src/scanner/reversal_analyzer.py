@@ -44,8 +44,8 @@ class ReversalAnalyzer:
                 'symbol': symbol,
                 'close': latest['close'],
                 'period': best_period['period'],
-                'red_days': best_period['red_days'],
                 'green_days': best_period['green_days'],
+                'first_red_date': best_period['first_red_date'].strftime('%d %b %y').lstrip('0'),
                 'decline_percent': best_period['decline_percent'],
                 'trend_context': trend_context,
                 'liquidity_verified': True,
@@ -63,7 +63,7 @@ class ReversalAnalyzer:
         best_setup = None
         max_decline = 0
 
-        for period in [3, 4, 5, 6, 7, 8]:
+        for period in range(3, 16):  # 3 to 15 inclusive
             if len(data) < period:
                 continue
 
@@ -74,7 +74,7 @@ class ReversalAnalyzer:
             green_days = period - red_days
 
             # Check pattern logic
-            if not self._check_pattern_logic(red_days, green_days, period):
+            if not self._check_pattern_logic(red_days, green_days, period, period_data):
                 continue
 
             # Calculate decline percentage
@@ -89,18 +89,18 @@ class ReversalAnalyzer:
                         max_decline = decline_percent
                         best_setup = {
                             'period': period,
-                            'red_days': red_days,
                             'green_days': green_days,
+                            'first_red_date': period_data.index[0].date(),
                             'decline_percent': decline_percent
                         }
 
         return best_setup
 
     def _check_extended_decline(self, data: pd.DataFrame, symbol: str = "") -> bool:
-        """Check for extended decline with correct pattern logic (3-8 days with >=13% drop)"""
+        """Check for extended decline with correct pattern logic (3-15 days with >=13% drop)"""
         try:
-            # Check periods 3-8 days
-            for period in [3, 4, 5, 6, 7, 8]:
+            # Check periods 3-15 days
+            for period in range(3, 16):
                 if len(data) < period:
                     continue
 
@@ -111,7 +111,7 @@ class ReversalAnalyzer:
                 green_days = period - red_days
 
                 # Apply period-specific pattern logic
-                if self._check_pattern_logic(red_days, green_days, period):
+                if self._check_pattern_logic(red_days, green_days, period, period_data):
                     # Calculate 13% minimum decline
                     start_price = period_data.iloc[0]['open']
                     end_price = period_data.iloc[-1]['close']
@@ -127,16 +127,23 @@ class ReversalAnalyzer:
         except Exception as e:
             logger.error(f"Error checking extended decline: {e}")
             return False
-    def _check_pattern_logic(self, red_days: int, green_days: int, period: int) -> bool:
+    def _check_pattern_logic(self, red_days: int, green_days: int, period: int, period_data: pd.DataFrame) -> bool:
         """
         Check if red/green pattern meets requirements for given period
+        First day of the period must be red (decline streak starts with red)
         """
+        # First day must be red (decline streak starts with red)
+        if not (period_data.iloc[0]['close'] < period_data.iloc[0]['open']):
+            return False
+
         if period == 3:
             return red_days == 3 and green_days == 0
         elif period in [4, 5]:
             return red_days > green_days
-        elif period in [6, 7, 8]:
+        elif period in [6, 7]:
             return red_days + 1 > green_days
+        elif period >= 8:
+            return green_days <= 3
         return False
 
     def _check_liquidity(self, data: pd.DataFrame) -> bool:

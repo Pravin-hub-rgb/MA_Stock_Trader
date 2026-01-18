@@ -17,6 +17,7 @@ export interface ScanResult {
   period?: number
   red_days?: number
   green_days?: number
+  first_red_date?: string
   decline_percent?: number
   trend_context?: string
   liquidity_verified?: boolean

@@ -1,210 +1,301 @@
 """
-Reversal-specific monitoring logic
-Extends stock monitoring with reversal situation handling
+OOPS Reversal Trading System
+Implements OOPS-based reversal trading with VIP elite-first priority
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, time
 import pytz
+import os
 
 IST = pytz.timezone('Asia/Kolkata')
 
 class ReversalMonitor:
-    """Handles reversal-specific monitoring logic"""
+    """Handles OOPS-based reversal trading logic"""
 
     def __init__(self):
-        # 3-min OHLC tracking for climax detection
-        self.three_min_bars = {}  # symbol -> list of 3-min bars
+        # Priority-based stock classification
+        self.vip_stocks = []      # Priority 1: 7+ days (any trend)
+        self.secondary_stocks = [] # Priority 2: 3-6 days + downtrend
+        self.tertiary_stocks = []  # Priority 3: 3-6 days + uptrend
 
-    def validate_reversal_gap(self, open_price: float, previous_close: float,
-                            situation: str) -> tuple[bool, str]:
+        # Trading state
+        self.active_positions = 0
+        self.max_positions = 2
+        self.watchlist_loaded = False
+
+    def load_watchlist(self, reversal_list_path: str = "src/trading/reversal_list.txt") -> bool:
         """
-        Validate gap based on situation
+        Load and classify stocks from reversal_list.txt (SYMBOL-TREND-DAYS format)
 
         Args:
-            open_price: Market open price
-            previous_close: Previous day's close
-            situation: 'continuation', 'reversal_s1', or 'reversal_s2'
+            reversal_list_path: Path to reversal list file
 
         Returns:
-            Tuple[bool, str]: (is_valid, reason)
+            bool: True if loaded successfully
         """
-        if open_price is None or previous_close is None:
-            return False, "Missing price data"
+        try:
+            if not os.path.exists(reversal_list_path):
+                print(f"Reversal list not found: {reversal_list_path}")
+                return False
 
-        gap_pct = (open_price - previous_close) / previous_close
+            with open(reversal_list_path, 'r') as f:
+                content = f.read().strip()
 
-        if situation in ['continuation', 'reversal_s1']:
-            # Gap up required (0-5%)
-            if gap_pct < 0:
-                return False, f"Gap down: {gap_pct:.1f} (need gap up for {situation})"
-            if gap_pct > 0.05:
-                return False, f"Gap up too high: {gap_pct:.1f} > 5%"
-            return True, f"Gap up validated: {gap_pct:.1f}"
-        elif situation == 'reversal_s2':
-            # Gap down required (-5% to 0%)
-            if gap_pct > 0:
-                return False, f"Gap up: {gap_pct:.1f} (need gap down for reversal_s2)"
-            if gap_pct < -0.05:
-                return False, f"Gap down too low: {gap_pct:.1f} < -5%"
-            return True, f"Gap down validated: {gap_pct:.1f}"
-        else:
-            return False, f"Unknown situation: {situation}"
+            if not content:
+                print("Reversal list is empty")
+                return False
 
-    def detect_subcase_2a(self, open_price: float, daily_low: float) -> bool:
-        """
-        Detect sub-case 2A: Gap down + open = low (strong start)
+            # Reset classifications
+            self.vip_stocks = []
+            self.secondary_stocks = []
+            self.tertiary_stocks = []
 
-        Args:
-            open_price: Market open price
-            daily_low: Current daily low
+            # Parse each entry
+            entries = content.split(',')
+            for entry in entries:
+                entry = entry.strip()
+                if not entry:
+                    continue
 
-        Returns:
-            bool: True if 2A conditions met
-        """
-        if open_price is None or daily_low is None:
+                parts = entry.split('-')
+                if len(parts) != 2:
+                    print(f"Invalid entry format: {entry} (expected SYMBOL-TRENDDAYS)")
+                    continue
+
+                symbol = parts[0]
+                trend_days = parts[1]  # 'd7' or 'u5'
+
+                # Parse trend and days from combined field
+                if len(trend_days) < 2:
+                    print(f"Invalid trend-days format: {trend_days} in {entry}")
+                    continue
+
+                trend = trend_days[0]  # 'd' or 'u'
+                days_str = trend_days[1:]  # '7' or '5'
+
+                try:
+                    days = int(days_str)
+                except ValueError:
+                    print(f"Invalid days format: {days_str} in {entry}")
+                    continue
+
+                if trend not in ['u', 'd']:
+                    print(f"Invalid trend format: {trend} in {entry} (expected 'u' or 'd')")
+                    continue
+
+                # Classify by priority
+                stock_info = {
+                    'symbol': symbol,
+                    'trend': trend,
+                    'days': days,
+                    'triggered': False,
+                    'entry_price': None,
+                    'stop_loss': None
+                }
+
+                if days >= 7:
+                    self.vip_stocks.append(stock_info)
+                    print(f"✓ VIP Stock: {symbol}-{trend}{days} (7+ days, any trend)")
+                elif days >= 3:
+                    if trend == 'd':
+                        self.secondary_stocks.append(stock_info)
+                        print(f"✓ Secondary Stock: {symbol}-{trend}{days} (3-6 days, downtrend)")
+                    else:  # trend == 'u'
+                        self.tertiary_stocks.append(stock_info)
+                        print(f"✓ Tertiary Stock: {symbol}-{trend}{days} (3-6 days, uptrend)")
+                else:
+                    print(f"⚠ Skipping {symbol}: Only {days} days (minimum 3)")
+
+            total_stocks = len(self.vip_stocks) + len(self.secondary_stocks) + len(self.tertiary_stocks)
+            print(f"Loaded {total_stocks} reversal stocks: {len(self.vip_stocks)} VIP, {len(self.secondary_stocks)} secondary, {len(self.tertiary_stocks)} tertiary")
+
+            self.watchlist_loaded = True
+            return True
+
+        except Exception as e:
+            print(f"Error loading reversal watchlist: {e}")
             return False
 
-        # Open equals low (within 1 paisa tolerance)
-        return abs(open_price - daily_low) <= 0.01
-
-    def process_three_min_bar(self, symbol: str, ohlc_data: Dict) -> None:
+    def check_oops_trigger(self, symbol: str, open_price: float, prev_close: float, current_price: float) -> bool:
         """
-        Process 3-minute OHLC bar for climax detection
+        Check if OOPS reversal conditions are met
 
         Args:
             symbol: Stock symbol
-            ohlc_data: OHLC data dict
-        """
-        if symbol not in self.three_min_bars:
-            self.three_min_bars[symbol] = []
+            open_price: Opening price
+            prev_close: Previous day's close
+            current_price: Current price
 
-        # Keep last 10 bars for climax analysis
-        self.three_min_bars[symbol].append(ohlc_data)
-        if len(self.three_min_bars[symbol]) > 10:
-            self.three_min_bars[symbol].pop(0)
-
-    def detect_climax_bar(self, symbol: str) -> bool:
+        Returns:
+            bool: True if OOPS conditions met
         """
-        Detect if the latest 3-min bar is a climax bar (>1.5% range)
+        if None in [open_price, prev_close, current_price]:
+            return False
+
+        # Condition 1: Gap down
+        gap_down = open_price < (prev_close * 0.98)  # 2%+ gap down
+
+        # Condition 2: Price crosses above previous close
+        crosses_prev_close = current_price > prev_close
+
+        return gap_down and crosses_prev_close
+
+    def check_strong_start_trigger(self, symbol: str, open_price: float, prev_close: float, current_low: float) -> bool:
+        """
+        Check if Strong Start conditions are met
 
         Args:
             symbol: Stock symbol
+            open_price: Opening price
+            prev_close: Previous day's close
+            current_low: Current low
 
         Returns:
-            bool: True if climax bar detected
+            bool: True if Strong Start conditions met
         """
-        if symbol not in self.three_min_bars:
+        if None in [open_price, prev_close, current_low]:
             return False
 
-        bars = self.three_min_bars[symbol]
-        if not bars:
-            return False
+        # Condition 1: Gap up (2%+ above prev close)
+        gap_up = open_price > (prev_close * 1.02)
 
-        # Get latest bar
-        latest_bar = bars[-1]
-        high = latest_bar.get('high', 0)
-        low = latest_bar.get('low', 0)
+        # Condition 2: Open ≈ low within 1%
+        open_equals_low = abs(open_price - current_low) / open_price <= 0.01
 
-        # Calculate percentage range
-        if low > 0:
-            range_pct = ((high - low) / low) * 100
-            return range_pct > 1.5  # 1.5% threshold for climax
+        return gap_up and open_equals_low
 
-        return False
+    def find_stock_in_watchlist(self, symbol: str) -> Optional[Dict]:
+        """Find stock in watchlist by symbol"""
+        for category in [self.vip_stocks, self.secondary_stocks, self.tertiary_stocks]:
+            for stock in category:
+                if stock['symbol'] == symbol:
+                    return stock
+        return None
 
-    def calculate_dynamic_retracement(self, daily_low: float, current_high: float) -> float:
+    def log_paper_trade(self, symbol: str, action: str, price: float, reason: str) -> None:
         """
-        Calculate 50% retracement trigger from daily range
+        Log paper trading activity
 
         Args:
-            daily_low: Lowest low of the day
-            current_high: Current high of the day
-
-        Returns:
-            float: Entry trigger price
+            symbol: Stock symbol
+            action: Action taken (ENTRY, EXIT, etc.)
+            price: Price at action
+            reason: Reason for action
         """
-        if daily_low is None or current_high is None:
-            return float('inf')
+        timestamp = datetime.now(IST).strftime("%H:%M:%S")
+        print(f"📊 PAPER TRADE [{timestamp}] {symbol}: {action} at ₹{price:.2f} - {reason}")
 
-        daily_range = current_high - daily_low
-        return daily_low + (daily_range * 0.5)  # Changed from 0.4 to 0.5
-
-    def should_enter_subcase_2a(self, stock_state, current_time: time) -> bool:
+    def execute_vip_first_logic(self, market_data: Dict[str, Any], current_time: time) -> None:
         """
-        Check if should enter for sub-case 2A (within first 5 min)
+        Execute VIP elite-first trading logic
 
         Args:
-            stock_state: StockState object
+            market_data: Dict of symbol -> price data
             current_time: Current market time
-
-        Returns:
-            bool: True if should enter
         """
-        # Must be within first 5 minutes
-        market_open = time(9, 15)
-        five_min_later = time(9, 20)
+        if not self.watchlist_loaded:
+            print("Watchlist not loaded - call load_watchlist() first")
+            return
 
-        if not (market_open <= current_time <= five_min_later):
-            return False
+        # Check for triggered stocks in priority order
+        triggered_stocks = []
 
-        # Must have gap validated and open = low
-        if not (hasattr(stock_state, 'gap_validated') and stock_state.gap_validated):
-            return False
+        # Check VIP stocks first (highest priority)
+        for stock in self.vip_stocks:
+            if stock['triggered']:
+                continue
 
-        return self.detect_subcase_2a(stock_state.open_price, stock_state.daily_low)
+            symbol = stock['symbol']
+            if symbol not in market_data:
+                continue
 
-    def should_enter_subcase_2b(self, stock_state, current_time: time) -> tuple[bool, float]:
-        """
-        Check if should enter for sub-case 2B (dynamic retracement, no time limit)
+            data = market_data[symbol]
+            open_price = data.get('open')
+            prev_close = data.get('prev_close')
+            current_price = data.get('ltp')
 
-        Args:
-            stock_state: StockState object
-            current_time: Current market time
+            # Check OOPS trigger
+            if self.check_oops_trigger(symbol, open_price, prev_close, current_price):
+                triggered_stocks.append({
+                    'stock': stock,
+                    'priority': 1,
+                    'method': 'OOPS',
+                    'price': current_price
+                })
 
-        Returns:
-            Tuple[bool, float]: (should_enter, trigger_price)
-        """
-        # Must have climax bar detected
-        if not hasattr(stock_state, 'climax_detected') or not stock_state.climax_detected:
-            return False, float('inf')
+        # Check secondary stocks (only if slots available)
+        if self.active_positions < self.max_positions:
+            for stock in self.secondary_stocks:
+                if stock['triggered']:
+                    continue
 
-        # Calculate current trigger
-        trigger = self.calculate_dynamic_retracement(stock_state.daily_low, stock_state.daily_high)
+                symbol = stock['symbol']
+                if symbol not in market_data:
+                    continue
 
-        # Check if price has reached trigger
-        if stock_state.current_price and stock_state.current_price >= trigger:
-            return True, trigger
+                data = market_data[symbol]
+                open_price = data.get('open')
+                prev_close = data.get('prev_close')
+                current_price = data.get('ltp')
+                current_low = data.get('low')
 
-        return False, trigger
+                # Check OOPS first, then Strong Start
+                if self.check_oops_trigger(symbol, open_price, prev_close, current_price):
+                    triggered_stocks.append({
+                        'stock': stock,
+                        'priority': 2,
+                        'method': 'OOPS',
+                        'price': current_price
+                    })
+                elif self.check_strong_start_trigger(symbol, open_price, prev_close, current_low):
+                    # Check time window for Strong Start (first 5 min)
+                    market_open = time(9, 15)
+                    five_min_later = time(9, 20)
+                    if market_open <= current_time <= five_min_later:
+                        triggered_stocks.append({
+                            'stock': stock,
+                            'priority': 2,
+                            'method': 'Strong Start',
+                            'price': current_price
+                        })
 
-    def prepare_reversal_entry(self, stock_state, situation: str) -> None:
-        """
-        Prepare entry levels for reversal situations
+        # Sort by priority (lower number = higher priority)
+        triggered_stocks.sort(key=lambda x: x['priority'])
 
-        Args:
-            stock_state: StockState object
-            situation: Trading situation
-        """
-        if situation in ['continuation', 'reversal_s1']:
-            # Standard continuation entry
-            stock_state.entry_high = stock_state.daily_high
-            stock_state.entry_sl = stock_state.entry_high * 0.96  # 4% below
+        # Execute trades (first-come-first-served within priority)
+        for trigger in triggered_stocks:
+            if self.active_positions >= self.max_positions:
+                break
 
-        elif situation == 'reversal_s2':
-            # Situation 2: Wait for sub-case determination
-            # Entry levels set dynamically based on sub-case
-            pass
+            stock = trigger['stock']
+            if stock['triggered']:
+                continue
 
-        stock_state.entry_ready = True
+            # Execute entry
+            stock['triggered'] = True
+            stock['entry_price'] = trigger['price']
+            stock['stop_loss'] = trigger['price'] * 0.96  # 4% below
 
-    def update_retracement_trigger(self, stock_state) -> None:
-        """
-        Update retracement trigger when new daily high is made
+            self.active_positions += 1
 
-        Args:
-            stock_state: StockState object
-        """
-        if hasattr(stock_state, 'retracement_trigger'):
-            new_trigger = self.calculate_dynamic_retracement(stock_state.daily_low, stock_state.daily_high)
-            stock_state.retracement_trigger = new_trigger
+            # Log paper trade
+            self.log_paper_trade(
+                stock['symbol'],
+                "ENTRY",
+                trigger['price'],
+                f"Priority {trigger['priority']} - {trigger['method']}"
+            )
+
+    def reset_daily_state(self) -> None:
+        """Reset daily trading state"""
+        self.active_positions = 0
+
+        # Reset all stock triggers but keep classifications
+        for category in [self.vip_stocks, self.secondary_stocks, self.tertiary_stocks]:
+            for stock in category:
+                stock['triggered'] = False
+                stock['entry_price'] = None
+                stock['stop_loss'] = None
+
+        print("Daily reversal trading state reset")

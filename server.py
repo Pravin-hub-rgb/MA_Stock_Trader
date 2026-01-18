@@ -729,6 +729,190 @@ async def finalize_continuation_list():
         logger.error(f"Failed to finalize continuation list: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Reversal Stock Management
+
+@app.get("/api/stocks/reversal")
+async def get_reversal_stocks():
+    """Get all reversal stocks with metadata"""
+    try:
+        import os
+        import json
+        from pathlib import Path
+
+        metadata_file = Path('src/trading/reversal_list_metadata.json')
+
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                data = json.load(f)
+                stocks = data.get('stocks', [])
+                # Sort by added_at descending (newest first)
+                stocks.sort(key=lambda x: x['added_at'], reverse=True)
+                return {"stocks": stocks}
+        else:
+            return {"stocks": []}
+
+    except Exception as e:
+        logger.error(f"Failed to get reversal stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/stocks/reversal")
+async def add_reversal_stock(stock_data: dict):
+    """Add a stock to the reversal list with period and trend"""
+    try:
+        import os
+        import json
+        from pathlib import Path
+        from datetime import datetime
+
+        symbol = stock_data.get('symbol', '').strip().upper()
+        period = stock_data.get('period')
+        trend = stock_data.get('trend', '').lower()  # 'uptrend' or 'downtrend'
+        source = stock_data.get('source', 'manual')
+
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+        if period is None:
+            raise HTTPException(status_code=400, detail="Period is required")
+        if trend not in ['uptrend', 'downtrend']:
+            raise HTTPException(status_code=400, detail="Trend must be 'uptrend' or 'downtrend'")
+
+        metadata_file = Path('src/trading/reversal_list_metadata.json')
+
+        # Load existing data
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {"stocks": []}
+
+        # Check if stock already exists
+        existing_stock = next((s for s in data['stocks'] if s['symbol'] == symbol), None)
+        if existing_stock:
+            raise HTTPException(status_code=409, detail=f"Stock {symbol} already exists in reversal list")
+
+        # Add new stock with period/trend
+        new_stock = {
+            "symbol": symbol,
+            "period": period,
+            "trend": trend,
+            "added_at": datetime.now().isoformat(),
+            "added_from": source
+        }
+        data['stocks'].append(new_stock)
+
+        # Save updated data
+        with open(metadata_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return {"message": f"Added {symbol} to reversal list", "stock": new_stock}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to add reversal stock: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/stocks/reversal/{symbol}")
+async def remove_reversal_stock(symbol: str):
+    """Remove a stock from the reversal list"""
+    try:
+        import json
+        from pathlib import Path
+
+        symbol = symbol.upper()
+        metadata_file = Path('src/trading/reversal_list_metadata.json')
+
+        if not metadata_file.exists():
+            raise HTTPException(status_code=404, detail="Reversal list not found")
+
+        with open(metadata_file, 'r') as f:
+            data = json.load(f)
+
+        # Find and remove the stock
+        original_length = len(data['stocks'])
+        data['stocks'] = [s for s in data['stocks'] if s['symbol'] != symbol]
+
+        if len(data['stocks']) == original_length:
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found in reversal list")
+
+        # Save updated data
+        with open(metadata_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return {"message": f"Removed {symbol} from reversal list"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to remove reversal stock: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/stocks/reversal")
+async def clear_reversal_stocks():
+    """Clear all stocks from the reversal list"""
+    try:
+        import json
+        from pathlib import Path
+
+        metadata_file = Path('src/trading/reversal_list_metadata.json')
+
+        # Create empty data structure
+        data = {"stocks": []}
+
+        # Save empty data
+        with open(metadata_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return {"message": "Cleared all stocks from reversal list"}
+
+    except Exception as e:
+        logger.error(f"Failed to clear reversal stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/stocks/reversal/finalize")
+async def finalize_reversal_list():
+    """Generate reversal_list.txt from metadata with SYMBOL-TREND_PERIOD format"""
+    try:
+        import json
+        from pathlib import Path
+
+        metadata_file = Path('src/trading/reversal_list_metadata.json')
+        txt_file = Path('src/trading/reversal_list.txt')
+
+        if not metadata_file.exists():
+            raise HTTPException(status_code=404, detail="No reversal stocks to finalize")
+
+        with open(metadata_file, 'r') as f:
+            data = json.load(f)
+
+        stocks = data.get('stocks', [])
+        if not stocks:
+            raise HTTPException(status_code=400, detail="No stocks in reversal list to finalize")
+
+        # Format as SYMBOL-TREND_PERIOD (e.g., "ABDL-d7", "HDFC-u5")
+        def format_stock(stock):
+            trend_char = 'u' if stock['trend'] == 'uptrend' else 'd'
+            return f"{stock['symbol']}-{trend_char}{stock['period']}"
+
+        formatted_stocks = [format_stock(stock) for stock in stocks]
+        csv_content = ','.join(formatted_stocks)
+
+        # Write to reversal_list.txt
+        with open(txt_file, 'w') as f:
+            f.write(csv_content)
+
+        return {
+            "message": f"Finalized reversal list with {len(formatted_stocks)} stocks",
+            "formatted_stocks": formatted_stocks,
+            "file": str(txt_file)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to finalize reversal list: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Token Management
 
 @app.post("/api/token/validate")
@@ -919,7 +1103,7 @@ def run_reversal_scan_background(operation_id: str, request: ScanRequest):
             filename = f"reversal_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
             with open(f'reversal_scans/{filename}', 'w', newline='') as csvfile:
-                fieldnames = ['symbol', 'close', 'period', 'red_days', 'green_days', 'decline_percent', 'trend_context', 'liquidity_verified', 'adr_percent']
+                fieldnames = ['symbol', 'close', 'period', 'green_days', 'first_red_date', 'decline_percent', 'trend_context', 'liquidity_verified', 'adr_percent']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(results)

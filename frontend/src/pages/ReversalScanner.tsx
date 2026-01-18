@@ -31,9 +31,12 @@ import {
 import {
   Download as DownloadIcon,
   CopyAll as CopyIcon,
-  Assessment as ResultsIcon
+  Assessment as ResultsIcon,
+  Add as AddIcon,
+  Close as CloseIcon
 } from '@mui/icons-material'
 import axios from 'axios'
+import ToastNotification from '../components/ToastNotification'
 import { ScanResult } from '../contexts/AppStateContext'
 
 interface ReversalScannerProps {
@@ -56,6 +59,14 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
   const [watchlistDialog, setWatchlistDialog] = useState(false)
   const [watchlists, setWatchlists] = useState<string[]>(['Default', 'Reversal', 'High Potential'])
   const [operationId, setOperationId] = useState<string | null>(null)
+  const [reversalStocks, setReversalStocks] = useState<string[]>([])
+  const [toasts, setToasts] = useState<Array<{
+    id: string
+    message: string
+    type: 'success' | 'error' | 'warning'
+    position: number
+  }>>([])
+  const [nextToastPosition, setNextToastPosition] = useState(0)
 
   // Filter states with localStorage persistence
   const [minPrice, setMinPrice] = useState(() => loadFilterValue('minPrice', 100))
@@ -168,15 +179,15 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
   const exportToCSV = () => {
     if (scanResults.length === 0) return
 
-    const headers = ['Symbol', 'Close', 'Period', 'Red Days', 'Green Days', 'Decline %', 'Trend Context', 'ADR %']
+    const headers = ['Symbol', 'Close', 'Period', 'Green Days', 'First Red Date', 'Decline %', 'Trend Context', 'ADR %']
     const csvContent = [
       headers.join(','),
       ...scanResults.map(row => [
         row.symbol,
         row.close.toFixed(2),
         row.period || 0,
-        row.red_days || 0,
         row.green_days || 0,
+        row.first_red_date || '',
         ((row.decline_percent || 0) * 100).toFixed(1),
         (row.trend_context || 'unknown').charAt(0).toUpperCase() + (row.trend_context || 'unknown').slice(1),
         (row.adr_percent || 0).toFixed(1)
@@ -192,12 +203,105 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
     window.URL.revokeObjectURL(url)
   }
 
+  // Fetch reversal stocks when component mounts or when scan results change
+  useEffect(() => {
+    if (scanResults.length > 0) {
+      fetchReversalStocks()
+    }
+  }, [scanResults])
+
+  const fetchReversalStocks = async () => {
+    try {
+      const response = await axios.get('/api/stocks/reversal')
+      const stocks = response.data.stocks || []
+      setReversalStocks(stocks.map((stock: any) => stock.symbol))
+    } catch (error) {
+      console.error('Failed to fetch reversal stocks:', error)
+    }
+  }
+
   // Copy to clipboard in Fyers format
   const copyToClipboard = () => {
     const selectedSymbols = selectedRows.length > 0 ? selectedRows : scanResults.map(r => r.symbol)
     const fyersFormat = selectedSymbols.map(symbol => `NSE:${symbol}-EQ`).join(',')
     navigator.clipboard.writeText(fyersFormat)
     setScanStatus(`Copied ${selectedSymbols.length} symbols to clipboard in Fyers format`)
+  }
+
+  // Handle reversal list actions (add/remove) with optimistic UI
+  const handleReversalListAction = async (row: ScanResult) => {
+    const symbol = row.symbol
+    const isInList = reversalStocks.includes(symbol)
+    const action = isInList ? 'remove' : 'add'
+
+    // Show optimistic success toast immediately
+    if (isInList) {
+      showToast(`✅ Removed ${symbol} from reversal list`, 'success')
+      // Update UI optimistically
+      setReversalStocks(prev => prev.filter(s => s !== symbol))
+    } else {
+      showToast(`✅ Added ${symbol} to reversal list`, 'success')
+      // Update UI optimistically
+      setReversalStocks(prev => [...prev, symbol])
+    }
+
+    // Make API call in background
+    try {
+      const stockData = {
+        symbol: symbol,
+        period: row.period,
+        trend: row.trend_context,
+        source: 'scan_results'
+      }
+
+      if (isInList) {
+        await axios.delete(`/api/stocks/reversal/${symbol}`)
+      } else {
+        await axios.post('/api/stocks/reversal', stockData)
+      }
+    } catch (error: any) {
+      console.error('Failed to update reversal list:', error)
+
+      // Revert optimistic update on failure
+      if (isInList) {
+        setReversalStocks(prev => [...prev, symbol])
+      } else {
+        setReversalStocks(prev => prev.filter(s => s !== symbol))
+      }
+
+      // Show error toast
+      if (error.response?.status === 409) {
+        showToast(`⚠️ ${symbol} is already in the reversal list`, 'warning')
+      } else {
+        showToast(`❌ Failed to ${action} ${symbol} to reversal list`, 'error')
+      }
+    }
+  }
+
+  // Toast notification system - supports unlimited simultaneous toasts
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    const toastId = `toast-${Date.now()}-${Math.random()}`
+
+    // Find the lowest available position
+    const occupiedPositions = toasts.map(t => t.position).sort((a, b) => a - b)
+    let position = 0
+    for (let i = 0; i < occupiedPositions.length; i++) {
+      if (occupiedPositions[i] !== i) {
+        position = i
+        break
+      }
+    }
+    if (position === 0 && occupiedPositions.length > 0) {
+      position = occupiedPositions.length
+    }
+
+    const newToast = { id: toastId, message, type, position }
+
+    setToasts(prev => [...prev, newToast]) // No limit on toasts
+  }
+
+  const removeToast = (toastId: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== toastId))
   }
 
   return (
@@ -476,12 +580,11 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
                       />
                     </TableCell>
                     {[
-
                       { key: 'symbol', label: 'Symbol' },
                       { key: 'close', label: 'Close' },
                       { key: 'period', label: 'Period' },
-                      { key: 'red_days', label: 'Red Days' },
                       { key: 'green_days', label: 'Green Days' },
+                      { key: 'first_red_date', label: 'First Red Date' },
                       { key: 'decline_percent', label: 'Decline %' },
                       { key: 'trend_context', label: 'Trend' },
                       { key: 'adr_percent', label: 'ADR %' }
@@ -509,6 +612,9 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
                         </TableSortLabel>
                       </TableCell>
                     ))}
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 600, width: 80 }}>
+                      Actions
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -533,8 +639,8 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
                       <TableCell sx={{ color: '#f8fafc', fontWeight: 600 }}>{row.symbol}</TableCell>
                       <TableCell sx={{ color: '#f8fafc' }}>₹{row.close.toFixed(2)}</TableCell>
                       <TableCell sx={{ color: '#f8fafc' }}>{row.period || 0}</TableCell>
-                      <TableCell sx={{ color: '#f8fafc' }}>{row.red_days || 0}</TableCell>
                       <TableCell sx={{ color: '#f8fafc' }}>{row.green_days || 0}</TableCell>
+                      <TableCell sx={{ color: '#f8fafc' }}>{row.first_red_date || ''}</TableCell>
                       <TableCell sx={{ color: '#f8fafc' }}>{((row.decline_percent || 0) * 100).toFixed(1)}%</TableCell>
                       <TableCell sx={{
                         color: (row.trend_context || 'unknown') === 'uptrend' ? '#10b981' :
@@ -545,6 +651,29 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
                       </TableCell>
                       <TableCell sx={{ color: (row.adr_percent || 0) >= 3 ? '#10b981' : '#f8fafc' }}>
                         {(row.adr_percent || 0).toFixed(1)}%
+                      </TableCell>
+                      <TableCell>
+                        {reversalStocks.includes(row.symbol) ? (
+                          <Tooltip title="Remove from reversal list" placement="right">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleReversalListAction(row)}
+                              sx={{ color: '#ef4444' }}
+                            >
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="Add to reversal list" placement="right">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleReversalListAction(row)}
+                              sx={{ color: '#10b981' }}
+                            >
+                              <AddIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -605,6 +734,45 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Toast Notifications - Fixed position layout */}
+      {toasts.map((toast) => (
+        <Box
+          key={toast.id}
+          sx={{
+            position: 'fixed',
+            bottom: 24 + (toast.position * 60), // Fixed position per toast
+            left: 24,
+            zIndex: 9999, // Same z-index since they're not overlapping
+            minWidth: 450, // Wider to fit text on one line
+            maxWidth: 600, // Allow even wider if needed
+            animation: `slideInFromRight 0.3s ease-out both`
+          }}
+        >
+          <ToastNotification
+            message={toast.message}
+            type={toast.type}
+            onClose={() => removeToast(toast.id)}
+            duration={3500}
+          />
+        </Box>
+      ))}
+
+      {/* Add custom animation for staggered slide-in */}
+      <style>
+        {`
+          @keyframes slideInFromRight {
+            from {
+              transform: translateX(120%);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+        `}
+      </style>
     </Box>
   )
 }
