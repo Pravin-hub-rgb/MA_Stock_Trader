@@ -68,35 +68,3 @@ These disqualify the stock—don't force it. Common from his style:
 
 If none trigger in first 30-60 min, move on—better setups come later or next day. He often adds to winners but cuts losers fast (e.g., 2% stop). This keeps it simple and risk-controlled.
 
-
-You're absolutely right! I was overcomplicating it. **Strong Start is just an entry method** - it's about HOW you enter, not WHAT you're trading.
-
-So let me correct the priority system:
-
-## **Corrected Priority System:**
-
-### **Priority 1: 7+ Red Days (Regardless of Trend)**
-- **Gap Down** → OOPS Reversal entry method
-- **Gap Up** → Strong Start entry method
-- **Logic**: These are prime mean reversion candidates, just different entry styles
-
-### **Priority 2: 3-6 Red Days + Downtrend**
-- **Gap Down** → OOPS Reversal entry method (primary)
-- **Gap Up** → Strong Start entry method (secondary)
-- **Logic**: Mean reversion plays, OOPS preferred for gap down
-
-### **Priority 3: 3-6 Red Days + Uptrend**
-- **Gap Up** → Strong Start entry method (primary)
-- **Gap Down** → OOPS Reversal entry method (secondary)
-- **Logic**: Could be continuation or pullback reversal, Strong Start preferred
-
-## **The Key Insight:**
-- **OOPS Reversal**: Entry method for gap-down scenarios (wait 3-4 min, cross prev close)
-- **Strong Start**: Entry method for gap-up/flat scenarios (early strength, open≈low)
-- **Both are mean reversion plays** when applied to reversal setups
-
-So for a downtrend with 3-6 red days:
-- **Gap Down** → OOPS (wait for reversal confirmation)
-- **Gap Up** → Strong Start (buy the early strength as mean reversion)
-
-This makes much more sense! The entry method depends on the gap direction, not the trend direction. Agreed?
