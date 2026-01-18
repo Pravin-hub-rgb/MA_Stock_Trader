@@ -1,3 +1,67 @@
 {
-  "stocks": []
+  "stocks": [
+    {
+      "symbol": "ELECON",
+      "period": 6,
+      "trend": "uptrend",
+      "added_at": "2026-01-18T22:24:10.011132",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "GVT&D",
+      "period": 6,
+      "trend": "uptrend",
+      "added_at": "2026-01-18T22:24:19.637515",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "MEESHO",
+      "period": 14,
+      "trend": "downtrend",
+      "added_at": "2026-01-18T22:25:54.722441",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "ORIENTTECH",
+      "period": 9,
+      "trend": "uptrend",
+      "added_at": "2026-01-18T22:26:10.061663",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PRAKASH",
+      "period": 12,
+      "trend": "downtrend",
+      "added_at": "2026-01-18T22:26:23.189801",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "SYSTMTXC",
+      "period": 15,
+      "trend": "downtrend",
+      "added_at": "2026-01-18T22:27:01.696580",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "TARIL",
+      "period": 9,
+      "trend": "uptrend",
+      "added_at": "2026-01-18T22:27:08.615383",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "TEJASNET",
+      "period": 9,
+      "trend": "downtrend",
+      "added_at": "2026-01-18T22:27:23.511670",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "WALCHANNAG",
+      "period": 15,
+      "trend": "downtrend",
+      "added_at": "2026-01-18T22:27:30.581438",
+      "added_from": "scan_results"
+    }
+  ]
 }
