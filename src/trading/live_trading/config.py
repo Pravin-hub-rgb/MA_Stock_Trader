@@ -15,7 +15,7 @@ CONFIRMATION_WINDOW = (ENTRY_DECISION_TIME.hour * 60 + ENTRY_DECISION_TIME.minut
 ENTRY_PREP_TIME = ENTRY_DECISION_TIME
 
 # === TRADING PARAMETERS ===
-MAX_STOCKS_TO_TRADE = 5        # Maximum stocks to trade per day
+MAX_STOCKS_TO_TRADE = 2        # Maximum stocks to trade per day (matches reversal logic)
 
 # Gap up conditions
 GAP_UP_MIN = 0.0               # Minimum gap up % (above previous close)

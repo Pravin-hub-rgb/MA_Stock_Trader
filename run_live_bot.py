@@ -166,15 +166,20 @@ def run_live_trading_bot():
         global global_selected_stocks, global_selected_symbols
         monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
 
-        # Process reversal data (OHLC for climax detection)
-        if ohlc_list and bot_config['mode'] == 'r':
+        # Process OOPS reversal logic
+        if bot_config['mode'] == 'r':
             stock = monitor.stocks.get(instrument_key)
             if stock and stock.situation == 'reversal_s2':
-                reversal_monitor.process_three_min_bar(symbol, ohlc_list)
-                # Check for climax detection
-                if reversal_monitor.detect_climax_bar(symbol) and not stock.climax_detected:
-                    stock.climax_detected = True
-                    print(f"TARGET {symbol}: Climax bar detected - monitoring for retracement entries")
+                # Check OOPS reversal conditions
+                if reversal_monitor.check_oops_trigger(symbol, stock.open_price, stock.previous_close, price):
+                    if not stock.oops_triggered:
+                        stock.oops_triggered = True
+                        print(f"TARGET {symbol}: OOPS reversal triggered - gap down + prev close cross")
+                        # Enter position immediately for OOPS
+                        stock.entry_high = price
+                        stock.entry_sl = price * 0.96  # 4% SL
+                        stock.enter_position(price, timestamp)
+                        paper_trader.log_entry(stock, price, timestamp)
 
         # Check violations for opened stocks (continuous monitoring)
         monitor.check_violations()
@@ -198,6 +203,7 @@ def run_live_trading_bot():
                 break  # Only do this once per tick to avoid spam
 
         # Check entry signals only after entry decision time (only for selected stocks)
+        current_time = datetime.now(IST).time()
         if current_time >= ENTRY_DECISION_TIME and global_selected_stocks:
             entry_signals = monitor.check_entry_signals()
 
@@ -207,32 +213,20 @@ def run_live_trading_bot():
                     stock.enter_position(price, timestamp)
                     paper_trader.log_entry(stock, price, timestamp)
 
-            # Check reversal entry signals
+            # Check Strong Start entry signals for continuation/reversal_s1
             if bot_config['mode'] == 'r':
                 for stock in monitor.stocks.values():
-                    if stock.symbol in global_selected_symbols and stock.situation == 'reversal_s2':
-                        # Check sub-case 2A (within first 5 min)
-                        if reversal_monitor.should_enter_subcase_2a(stock, current_time):
-                            print(f"TARGET {stock.symbol} sub-case 2A entry triggered at Rs{price:.2f} (open=low)")
-                            stock.entry_high = price  # Set entry level for SL calculation
-                            stock.entry_sl = price * 0.96  # 4% SL
-                            stock.enter_position(price, timestamp)
-                            paper_trader.log_entry(stock, price, timestamp)
-                            break  # One entry per tick
-
-                        # Check sub-case 2B (dynamic retracement, no time limit)
-                        should_enter_2b, trigger_price = reversal_monitor.should_enter_subcase_2b(stock, current_time)
-                        if should_enter_2b and stock.entry_attempts < stock.max_entry_attempts:
-                            stock.entry_attempts += 1
-                            print(f"TARGET {stock.symbol} sub-case 2B entry #{stock.entry_attempts} triggered at Rs{price:.2f} (trigger: Rs{trigger_price:.2f})")
-                            stock.entry_high = price  # Set entry level for SL calculation
-                            stock.entry_sl = price * 0.96  # 4% SL
-                            stock.enter_position(price, timestamp)
-                            paper_trader.log_entry(stock, price, timestamp)
-
-                            # Update retracement trigger for next attempt
-                            reversal_monitor.update_retracement_trigger(stock)
-                            break  # One entry per tick
+                    if stock.symbol in global_selected_symbols and stock.situation in ['continuation', 'reversal_s1']:
+                        # Check Strong Start conditions
+                        if reversal_monitor.check_strong_start_trigger(stock.symbol, stock.open_price, stock.previous_close, stock.daily_low):
+                            if not stock.strong_start_triggered:
+                                stock.strong_start_triggered = True
+                                print(f"TARGET {stock.symbol}: Strong Start triggered - gap up + open≈low")
+                                # Enter position for Strong Start
+                                stock.entry_high = price
+                                stock.entry_sl = price * 0.96  # 4% SL
+                                stock.enter_position(price, timestamp)
+                                paper_trader.log_entry(stock, price, timestamp)
 
         # Check trailing stops and exit signals for entered positions
         if current_time >= ENTRY_DECISION_TIME:

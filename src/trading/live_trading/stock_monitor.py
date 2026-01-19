@@ -41,11 +41,9 @@ class StockState:
         self.entry_ready = False
         self.entered = False
 
-        # Reversal-specific flags
-        self.climax_detected = False
-        self.retracement_trigger: Optional[float] = None
-        self.entry_attempts = 0
-        self.max_entry_attempts = 3
+        # Reversal-specific flags (OOPS system)
+        self.oops_triggered = False
+        self.strong_start_triggered = False
 
         # Volume tracking (9:15-9:20)
         self.early_volume = 0.0  # Cumulative volume during monitoring window

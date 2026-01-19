@@ -1,6 +1,6 @@
 """
 OOPS Reversal Trading System
-Implements OOPS-based reversal trading with VIP elite-first priority
+Implements OOPS-based reversal trading with VIP elite-first priority and quality scoring
 """
 
 from typing import Optional, List, Dict, Any, Tuple
@@ -117,6 +117,68 @@ class ReversalMonitor:
             print(f"Error loading reversal watchlist: {e}")
             return False
 
+    def rank_stocks_by_quality(self) -> None:
+        """
+        Rank stocks within each category by quality score (ADR + Price)
+        Higher ranked stocks get monitoring priority
+        """
+        try:
+            # Lazy import to avoid circular dependencies
+            import sys
+            import os
+            parent_dir = os.path.dirname(os.path.dirname(__file__))
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+            from src.scanner.stock_scorer import stock_scorer
+
+            # Get all symbols to rank
+            all_symbols = []
+            for category in [self.vip_stocks, self.secondary_stocks, self.tertiary_stocks]:
+                all_symbols.extend([stock['symbol'] for stock in category])
+
+            if not all_symbols:
+                print("No stocks to rank")
+                return
+
+            # Preload metadata for all stocks (prev_closes can be empty dict for ranking)
+            stock_scorer.preload_metadata(all_symbols, prev_closes={})
+
+            # Rank each category separately
+            self._rank_category_stocks(self.vip_stocks, stock_scorer, "VIP")
+            self._rank_category_stocks(self.secondary_stocks, stock_scorer, "Secondary")
+            self._rank_category_stocks(self.tertiary_stocks, stock_scorer, "Tertiary")
+
+            print("✓ Stock ranking completed - higher ranked stocks will be monitored first")
+
+        except Exception as e:
+            print(f"Error ranking stocks: {e}")
+            # Continue without ranking - use original order as fallback
+
+    def _rank_category_stocks(self, category_stocks: List[Dict], stock_scorer, category_name: str) -> None:
+        """Rank stocks within a specific category"""
+        if not category_stocks:
+            return
+
+        symbols = [stock['symbol'] for stock in category_stocks]
+
+        # Get top ranked stocks (no volume data yet, so early_volume=0)
+        ranked_stocks = stock_scorer.get_top_stocks(symbols, {symbol: 0 for symbol in symbols}, len(symbols))
+
+        # Update stocks with ranking information
+        for rank, score_data in enumerate(ranked_stocks, 1):
+            symbol = score_data['symbol']
+            total_score = score_data['total_score']
+
+            # Find and update the stock in our category
+            for stock in category_stocks:
+                if stock['symbol'] == symbol:
+                    stock['quality_rank'] = rank
+                    stock['quality_score'] = total_score
+                    stock['adr_percent'] = score_data['adr_pct']
+                    stock['current_price'] = score_data['price']
+                    print(f"  {category_name} #{rank}: {symbol} (Score: {total_score}, ADR: {score_data['adr_pct']:.1f}%)")
+                    break
+
     def check_oops_trigger(self, symbol: str, open_price: float, prev_close: float, current_price: float) -> bool:
         """
         Check if OOPS reversal conditions are met
@@ -201,8 +263,9 @@ class ReversalMonitor:
         # Check for triggered stocks in priority order
         triggered_stocks = []
 
-        # Check VIP stocks first (highest priority)
-        for stock in self.vip_stocks:
+        # Check VIP stocks first (highest priority) - sorted by quality rank
+        vip_stocks_sorted = sorted(self.vip_stocks, key=lambda x: x.get('quality_rank', 999))
+        for stock in vip_stocks_sorted:
             if stock['triggered']:
                 continue
 
@@ -224,9 +287,10 @@ class ReversalMonitor:
                     'price': current_price
                 })
 
-        # Check secondary stocks (only if slots available)
+        # Check secondary stocks (only if slots available) - sorted by quality rank
         if self.active_positions < self.max_positions:
-            for stock in self.secondary_stocks:
+            secondary_stocks_sorted = sorted(self.secondary_stocks, key=lambda x: x.get('quality_rank', 999))
+            for stock in secondary_stocks_sorted:
                 if stock['triggered']:
                     continue
 
@@ -259,6 +323,9 @@ class ReversalMonitor:
                             'method': 'Strong Start',
                             'price': current_price
                         })
+
+        # Tertiary stocks are lowest priority - only check if still need positions and no better options
+        # They are not checked here as they would be rejected by gap-down requirements anyway
 
         # Sort by priority (lower number = higher priority)
         triggered_stocks.sort(key=lambda x: x['priority'])
