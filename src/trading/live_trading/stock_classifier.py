@@ -38,7 +38,7 @@ class StockClassifier:
 
     def load_reversal_stocks(self) -> Tuple[List[str], Dict[str, str]]:
         """
-        Load stocks from reversal_list.txt and classify situations
+        Load stocks from reversal_list.txt and classify situations (SYMBOL-TREND-DAYS format)
 
         Returns:
             Tuple[List[str], Dict[str, str]]: (symbols, symbol_to_situation_map)
@@ -48,28 +48,73 @@ class StockClassifier:
         try:
             with open(filepath, 'r') as f:
                 content = f.read().strip()
-                raw_symbols = [s.strip() for s in content.split(',') if s.strip()]
+                raw_entries = [s.strip() for s in content.split(',') if s.strip()]
 
             symbols = []
             situations = {}
 
-            for raw_symbol in raw_symbols:
-                if raw_symbol.endswith('-u'):
-                    symbol = raw_symbol[:-2]  # Remove -u
-                    situation = 'reversal_s1'  # Uptrend reversal
-                elif raw_symbol.endswith('-d'):
-                    symbol = raw_symbol[:-2]  # Remove -d
-                    situation = 'reversal_s2'  # Downtrend reversal
-                else:
-                    print(f"Warning: {raw_symbol} has no -u/-d flag, skipping")
+            for entry in raw_entries:
+                # Parse SYMBOL-TREND-DAYS format (e.g., "ELECON-u6")
+                parts = entry.split('-')
+                if len(parts) != 2:
+                    print(f"Warning: Invalid format {entry}, expected SYMBOL-TRENDDAYS")
                     continue
+
+                symbol = parts[0]
+                trend_days = parts[1]
+
+                # Parse trend and days
+                if len(trend_days) < 2:
+                    print(f"Warning: Invalid trend-days {trend_days} in {entry}")
+                    continue
+
+                trend = trend_days[0]  # 'u' or 'd'
+                try:
+                    days = int(trend_days[1:])
+                except ValueError:
+                    print(f"Warning: Invalid days format {trend_days[1:]} in {entry}")
+                    continue
+
+                if trend not in ['u', 'd']:
+                    print(f"Warning: Invalid trend {trend} in {entry}, expected 'u' or 'd'")
+                    continue
+
+                # Classify situation based on priority system
+                if days >= 7:
+                    situation = 'reversal_vip'  # 7+ days, any trend (elite)
+                elif trend == 'd':
+                    situation = 'reversal_secondary'  # 3-6 days, downtrend
+                else:  # trend == 'u'
+                    situation = 'reversal_tertiary'  # 3-6 days, uptrend
 
                 symbols.append(symbol)
                 situations[symbol] = situation
 
             print(f"Loaded {len(symbols)} reversal stocks:")
+
+            # Create a mapping of symbol to its trend and days for printing
+            symbol_details = {}
+            for entry in raw_entries:
+                parts = entry.split('-')
+                if len(parts) == 2:
+                    symbol = parts[0]
+                    trend_days = parts[1]
+                    if len(trend_days) >= 2:
+                        trend = trend_days[0]
+                        try:
+                            days = int(trend_days[1:])
+                            symbol_details[symbol] = (trend, days)
+                        except ValueError:
+                            pass
+
             for symbol, situation in situations.items():
-                desc = "Uptrend (Continuation method)" if situation == 'reversal_s1' else "Downtrend (Gap down required)"
+                trend, days = symbol_details.get(symbol, ('?', 0))
+                if situation == 'reversal_vip':
+                    desc = f"7+ days ({trend}{days}) - ELITE VIP"
+                elif situation == 'reversal_secondary':
+                    desc = f"3-6 days + downtrend ({trend}{days})"
+                else:  # reversal_tertiary
+                    desc = f"3-6 days + uptrend ({trend}{days})"
                 print(f"   {symbol}: {desc}")
 
             return symbols, situations

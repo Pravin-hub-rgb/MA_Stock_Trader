@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 export interface ScanResult {
   symbol: string
@@ -119,10 +119,48 @@ const initialState: AppState = {
   activeOperations: {}
 }
 
+const NAVIGATION_STORAGE_KEY = 'ma-stock-trader-navigation'
+
+// Utility functions for localStorage
+const loadNavigationState = () => {
+  try {
+    const saved = localStorage.getItem(NAVIGATION_STORAGE_KEY)
+    return saved ? JSON.parse(saved) : {}
+  } catch (error) {
+    console.warn('Failed to load navigation state from localStorage:', error)
+    return {}
+  }
+}
+
+const saveNavigationState = (state: Partial<Pick<AppState, 'activeScannerTab' | 'activeLiveTradingTab'>>) => {
+  try {
+    localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(state))
+  } catch (error) {
+    console.warn('Failed to save navigation state to localStorage:', error)
+  }
+}
+
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined)
 
 export const AppStateProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<AppState>(initialState)
+  // Load persisted navigation state
+  const persistedNavigation = loadNavigationState()
+
+  const [state, setState] = useState<AppState>({
+    ...initialState,
+    // Override defaults with persisted values
+    activeScannerTab: persistedNavigation.activeScannerTab || initialState.activeScannerTab,
+    activeLiveTradingTab: persistedNavigation.activeLiveTradingTab || initialState.activeLiveTradingTab,
+  })
+
+  // Auto-save navigation state to localStorage whenever it changes
+  useEffect(() => {
+    const navigationState = {
+      activeScannerTab: state.activeScannerTab,
+      activeLiveTradingTab: state.activeLiveTradingTab,
+    }
+    saveNavigationState(navigationState)
+  }, [state.activeScannerTab, state.activeLiveTradingTab])
 
   const updateState = (updates: Partial<AppState>) => {
     setState(prev => ({ ...prev, ...updates }))

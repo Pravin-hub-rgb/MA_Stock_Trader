@@ -8,9 +8,8 @@ import os
 import logging
 from typing import List, Dict, Optional
 
-# Add current directory to path for imports
-sys.path.append(os.path.dirname(__file__))
-from config import MAX_STOCKS_TO_TRADE
+# Import from local config file
+from .config import MAX_STOCKS_TO_TRADE
 from stock_monitor import StockState
 
 logger = logging.getLogger(__name__)

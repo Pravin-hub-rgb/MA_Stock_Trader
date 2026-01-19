@@ -248,89 +248,173 @@ class ReversalMonitor:
         timestamp = datetime.now(IST).strftime("%H:%M:%S")
         print(f"📊 PAPER TRADE [{timestamp}] {symbol}: {action} at ₹{price:.2f} - {reason}")
 
-    def execute_vip_first_logic(self, market_data: Dict[str, Any], current_time: time) -> None:
+    def execute_market_context_logic(self, market_data: Dict[str, Any], current_time: time, oops_candidates=None, strong_start_candidates=None) -> None:
         """
-        Execute VIP elite-first trading logic
+        Execute market-context-aware trading logic based on OOPS candidate count
 
         Args:
             market_data: Dict of symbol -> price data
             current_time: Current market time
+            oops_candidates: Pre-computed OOPS candidates (optional)
+            strong_start_candidates: Pre-computed Strong Start candidates (optional)
         """
         if not self.watchlist_loaded:
             print("Watchlist not loaded - call load_watchlist() first")
             return
 
-        # Check for triggered stocks in priority order
+        # Step 1: Use provided candidates or identify from market data
+        if oops_candidates is not None and strong_start_candidates is not None:
+            # Use pre-computed gap analysis - filter Strong Start for 1% movement
+            final_oops_candidates = oops_candidates
+            final_strong_start_candidates = self._filter_strong_start_for_movement(strong_start_candidates, market_data)
+        else:
+            # Fallback: analyze gaps from market data (for testing)
+            final_oops_candidates = []
+            final_strong_start_candidates = []
+
+            for category in [self.vip_stocks, self.secondary_stocks, self.tertiary_stocks]:
+                for stock in category:
+                    if stock['triggered']:
+                        continue
+
+                    symbol = stock['symbol']
+                    if symbol not in market_data:
+                        continue
+
+                    data = market_data[symbol]
+                    open_price = data.get('open')
+                    prev_close = data.get('prev_close')
+
+                    if open_price is None or prev_close is None:
+                        continue
+
+                    gap_pct = (open_price - prev_close) / prev_close
+                    if gap_pct <= -0.02:  # 2%+ gap down
+                        final_oops_candidates.append(stock)
+                    elif gap_pct >= 0.02:  # 2%+ gap up
+                        final_strong_start_candidates.append(stock)
+
+        oops_count = len(final_oops_candidates)
+
+        # Step 2: Execute based on market context
         triggered_stocks = []
 
-        # Check VIP stocks first (highest priority) - sorted by quality rank
-        vip_stocks_sorted = sorted(self.vip_stocks, key=lambda x: x.get('quality_rank', 999))
-        for stock in vip_stocks_sorted:
-            if stock['triggered']:
-                continue
+        # Only log market context once per minute to avoid flooding
+        import time
+        current_minute = int(time.time() // 60)
+        if not hasattr(self, '_last_context_log') or self._last_context_log != current_minute:
+            self._last_context_log = current_minute
+            if oops_count >= 2:
+                # GAP DOWN REVERSAL DAY: Execute only OOPS
+                print(f"🎯 GAP DOWN DAY: {oops_count} OOPS candidates - Executing OOPS only")
+            elif oops_count == 1:
+                # MIXED DAY: Execute OOPS + fill remaining slot with Strong Start
+                print(f"🔄 MIXED DAY: 1 OOPS candidate - Executing OOPS + Strong Start")
+            else:
+                # GAP UP STRENGTH DAY: Execute only Strong Start
+                print(f"📈 GAP UP DAY: 0 OOPS candidates - Executing Strong Start only")
+        else:
+            # Silent execution - no logging to avoid flood
+            pass
 
+        # Still execute the logic
+        if oops_count >= 2:
+            self._execute_oops_only(final_oops_candidates, market_data, triggered_stocks)
+        elif oops_count == 1:
+            self._execute_oops_plus_ss(final_oops_candidates, final_strong_start_candidates, market_data, current_time, triggered_stocks)
+        else:
+            self._execute_strong_start_only(final_strong_start_candidates, market_data, current_time, triggered_stocks)
+
+        # Step 3: Execute trades
+        self._execute_trades(triggered_stocks)
+
+    def _execute_oops_only(self, oops_candidates, market_data, triggered_stocks):
+        """Execute only OOPS triggers (gap down reversal day)"""
+        # Sort by quality rank for priority
+        oops_candidates_sorted = sorted(oops_candidates, key=lambda x: x.get('quality_rank', 999))
+
+        for stock in oops_candidates_sorted:
             symbol = stock['symbol']
-            if symbol not in market_data:
-                continue
-
             data = market_data[symbol]
             open_price = data.get('open')
             prev_close = data.get('prev_close')
             current_price = data.get('ltp')
 
-            # Check OOPS trigger
             if self.check_oops_trigger(symbol, open_price, prev_close, current_price):
                 triggered_stocks.append({
                     'stock': stock,
-                    'priority': 1,
                     'method': 'OOPS',
                     'price': current_price
                 })
 
-        # Check secondary stocks (only if slots available) - sorted by quality rank
+    def _execute_oops_plus_ss(self, oops_candidates, strong_start_candidates, market_data, current_time, triggered_stocks):
+        """Execute 1 OOPS + fill remaining slot with Strong Start (mixed day)"""
+        # Execute the OOPS candidate first
+        stock = oops_candidates[0]  # Only 1 in this scenario
+        symbol = stock['symbol']
+        data = market_data[symbol]
+        open_price = data.get('open')
+        prev_close = data.get('prev_close')
+        current_price = data.get('ltp')
+
+        if self.check_oops_trigger(symbol, open_price, prev_close, current_price):
+            triggered_stocks.append({
+                'stock': stock,
+                'method': 'OOPS',
+                'price': current_price
+            })
+
+        # Fill remaining slot with best Strong Start
         if self.active_positions < self.max_positions:
-            secondary_stocks_sorted = sorted(self.secondary_stocks, key=lambda x: x.get('quality_rank', 999))
-            for stock in secondary_stocks_sorted:
-                if stock['triggered']:
-                    continue
+            strong_start_candidates_sorted = sorted(strong_start_candidates, key=lambda x: x.get('quality_rank', 999))
 
+            for stock in strong_start_candidates_sorted:
                 symbol = stock['symbol']
-                if symbol not in market_data:
-                    continue
-
                 data = market_data[symbol]
                 open_price = data.get('open')
                 prev_close = data.get('prev_close')
-                current_price = data.get('ltp')
                 current_low = data.get('low')
 
-                # Check OOPS first, then Strong Start
-                if self.check_oops_trigger(symbol, open_price, prev_close, current_price):
-                    triggered_stocks.append({
-                        'stock': stock,
-                        'priority': 2,
-                        'method': 'OOPS',
-                        'price': current_price
-                    })
-                elif self.check_strong_start_trigger(symbol, open_price, prev_close, current_low):
-                    # Check time window for Strong Start (first 5 min)
-                    market_open = time(9, 15)
-                    five_min_later = time(9, 20)
-                    if market_open <= current_time <= five_min_later:
+                # Check time window for Strong Start (first 5 min)
+                market_open = time(9, 15)
+                five_min_later = time(9, 20)
+                if market_open <= current_time <= five_min_later:
+                    if self.check_strong_start_trigger(symbol, open_price, prev_close, current_low):
                         triggered_stocks.append({
                             'stock': stock,
-                            'priority': 2,
                             'method': 'Strong Start',
-                            'price': current_price
+                            'price': data.get('ltp')
                         })
+                        break  # Take only the best one
 
-        # Tertiary stocks are lowest priority - only check if still need positions and no better options
-        # They are not checked here as they would be rejected by gap-down requirements anyway
+    def _execute_strong_start_only(self, strong_start_candidates, market_data, current_time, triggered_stocks):
+        """Execute only Strong Start triggers (gap up strength day)"""
+        # Check time window for Strong Start (first 5 min)
+        market_open = time(9, 15)
+        five_min_later = time(9, 20)
 
-        # Sort by priority (lower number = higher priority)
-        triggered_stocks.sort(key=lambda x: x['priority'])
+        if not (market_open <= current_time <= five_min_later):
+            return  # Strong Start only in first 5 min
 
-        # Execute trades (first-come-first-served within priority)
+        # Sort by quality rank and execute
+        strong_start_candidates_sorted = sorted(strong_start_candidates, key=lambda x: x.get('quality_rank', 999))
+
+        for stock in strong_start_candidates_sorted:
+            symbol = stock['symbol']
+            data = market_data[symbol]
+            open_price = data.get('open')
+            prev_close = data.get('prev_close')
+            current_low = data.get('low')
+
+            if self.check_strong_start_trigger(symbol, open_price, prev_close, current_low):
+                triggered_stocks.append({
+                    'stock': stock,
+                    'method': 'Strong Start',
+                    'price': data.get('ltp')
+                })
+
+    def _execute_trades(self, triggered_stocks):
+        """Execute the triggered trades"""
         for trigger in triggered_stocks:
             if self.active_positions >= self.max_positions:
                 break
@@ -351,7 +435,7 @@ class ReversalMonitor:
                 stock['symbol'],
                 "ENTRY",
                 trigger['price'],
-                f"Priority {trigger['priority']} - {trigger['method']}"
+                f"{trigger['method']}"
             )
 
     def reset_daily_state(self) -> None:
@@ -366,3 +450,30 @@ class ReversalMonitor:
                 stock['stop_loss'] = None
 
         print("Daily reversal trading state reset")
+
+    def _filter_strong_start_for_movement(self, strong_start_candidates, market_data):
+        """Filter Strong Start candidates that have moved >1% from opening price"""
+        filtered_candidates = []
+
+        for stock in strong_start_candidates:
+            symbol = stock['symbol']
+            required_target = stock.get('required_move_target')
+
+            if required_target is None:
+                continue  # No movement requirement set
+
+            if symbol in market_data:
+                current_price = market_data[symbol].get('ltp')
+                opening_price = market_data[symbol].get('open')
+
+                if current_price is not None and opening_price is not None:
+                    # Check if moved >1% from opening price
+                    if current_price >= required_target:
+                        filtered_candidates.append(stock)
+                        print(f"✅ {symbol}: Strong Start qualified - moved to ₹{current_price:.2f} (>1% from ₹{opening_price:.2f})")
+                    else:
+                        print(f"❌ {symbol}: Strong Start rejected - only at ₹{current_price:.2f} (needs ₹{required_target:.2f} for >1% move)")
+                else:
+                    print(f"⚠️ {symbol}: Missing price data for Strong Start check")
+
+        return filtered_candidates

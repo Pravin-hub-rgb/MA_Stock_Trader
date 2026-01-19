@@ -6,8 +6,8 @@ All trading parameters in one place for easy modification
 from datetime import time
 
 # === MARKET TIMING ===
-MARKET_OPEN = time(9, 15)            # Market open time
-ENTRY_DECISION_TIME = time(9, 20)    # Entry decision time 
+MARKET_OPEN = time(14, 51)            # Market open time
+ENTRY_DECISION_TIME = time(14, 53)    # Entry decision time
 
 # Auto-calculated (don't modify)
 PREP_END = time(MARKET_OPEN.hour, MARKET_OPEN.minute, max(0, MARKET_OPEN.second - 30))
@@ -37,7 +37,7 @@ UPSTOX_CONFIG_FILE = "upstox_config.json"
 SUBSCRIPTION_MODE = "full"     # Full mode for OHLC + LTP
 
 # === LOGGING ===
-LOG_LEVEL = "INFO"
+LOG_LEVEL = "DEBUG"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # === PAPER TRADING ===
@@ -53,4 +53,3 @@ PRINT_TICKS = False           # Print every tick (verbose)
 
 # === TESTING ===
 TEST_MODE = False            # Enable test mode (bypasses market timing)
-SIMULATE_OPENING_PRICES = False # Use simulated opening prices for testing

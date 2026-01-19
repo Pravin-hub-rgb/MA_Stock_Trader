@@ -13,14 +13,13 @@ import pytz
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from .config import *
+from config import *
 from .stock_monitor import StockMonitor
 from .rule_engine import RuleEngine
 from .selection_engine import SelectionEngine
 from .paper_trader import PaperTrader
 from .reversal_monitor import ReversalMonitor
-from .volume_profile import volume_profile_calculator
-from utils.upstox_fetcher import UpstoxFetcher
+from ..utils.upstox_fetcher import UpstoxFetcher
 
 # Setup logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
@@ -163,30 +162,9 @@ class LiveTradingOrchestrator:
                 logger.error("No candidate stocks loaded")
                 return False
 
-            # Get previous close prices - extract clean symbols from reversal format
+            # Get previous close prices
             symbols = list(candidates.keys())
-
-            # For reversal mode, extract clean symbol names (remove -u/-d suffixes)
-            if self.reversal_mode:
-                clean_symbols = []
-                for symbol in symbols:
-                    # Remove the -u/-d suffix (e.g., "ELECON-u6" -> "ELECON")
-                    clean_symbol = symbol.split('-')[0]
-                    clean_symbols.append(clean_symbol)
-                api_symbols = clean_symbols
-            else:
-                api_symbols = symbols
-
-            prev_closes = self.get_previous_closes(api_symbols)
-
-            # For reversal mode, map back to original symbol keys
-            if self.reversal_mode:
-                symbol_mapping = {symbol.split('-')[0]: symbol for symbol in symbols}
-                mapped_prev_closes = {}
-                for clean_symbol, prev_close in prev_closes.items():
-                    original_symbol = symbol_mapping.get(clean_symbol, clean_symbol)
-                    mapped_prev_closes[original_symbol] = prev_close
-                prev_closes = mapped_prev_closes
+            prev_closes = self.get_previous_closes(symbols)
 
             # Update candidates with prev closes
             candidates.update(prev_closes)
@@ -200,11 +178,6 @@ class LiveTradingOrchestrator:
                 # Preload stock scoring metadata for continuation
                 from .stock_scorer import stock_scorer
                 stock_scorer.preload_metadata(symbols)
-
-                # Calculate VAH (Value Area High) from previous day's volume profile
-                logger.info("Calculating VAH from previous day's volume profile...")
-                self.vah_dict = volume_profile_calculator.calculate_vah_for_stocks(symbols)
-                logger.info(f"VAH calculated for {len(self.vah_dict)} stocks")
 
                 # Set selection method to quality_score
                 self.selection_engine.set_selection_method("quality_score")
@@ -263,7 +236,7 @@ class LiveTradingOrchestrator:
                             break
 
                 current_time = datetime.now(IST).time()
-                self.reversal_monitor.execute_market_context_logic(market_data, current_time)
+                self.reversal_monitor.execute_vip_first_logic(market_data, current_time)
             else:
                 # Handle continuation mode
                 self.monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_data)
@@ -329,10 +302,6 @@ class LiveTradingOrchestrator:
             # Wait for market open
             self.wait_for_market_open()
 
-            # Apply VAH filtering for continuation mode
-            if not self.reversal_mode:
-                self.apply_vah_filtering()
-
             if self.reversal_mode:
                 # Reversal mode: Continuous monitoring throughout the day
                 logger.info("Reversal mode: Starting continuous monitoring...")
@@ -378,45 +347,6 @@ class LiveTradingOrchestrator:
                 break
             time.sleep(1)
 
-    def apply_vah_filtering(self):
-        """Apply VAH filtering: reject stocks that open below previous day's VAH"""
-        logger.info("=== APPLYING VAH FILTERING ===")
-
-        try:
-            rejected_count = 0
-
-            # Get opening prices for all stocks
-            for stock in self.monitor.get_active_stocks():
-                try:
-                    # Get opening price from LTP API
-                    ltp_data = self.upstox_fetcher.get_ltp_data(stock.symbol)
-                    if ltp_data and 'open_price' in ltp_data and ltp_data['open_price']:
-                        open_price = float(ltp_data['open_price'])
-                        stock.set_open_price(open_price)
-
-                        # Check VAH condition
-                        vah = self.vah_dict.get(stock.symbol)
-                        if vah is not None:
-                            if open_price < vah:
-                                # Reject stock
-                                stock.reject(f"Opened below VAH (Open: ₹{open_price:.2f} < VAH: ₹{vah:.2f})")
-                                self.paper_trader.log_rejection(stock, stock.rejection_reason)
-                                rejected_count += 1
-                                logger.info(f"❌ REJECTED: {stock.symbol} - Opened below VAH (₹{open_price:.2f} < ₹{vah:.2f})")
-                            else:
-                                logger.info(f"✅ QUALIFIED: {stock.symbol} - Open ₹{open_price:.2f} >= VAH ₹{vah:.2f}")
-                        else:
-                            logger.warning(f"No VAH data for {stock.symbol}, skipping VAH filter")
-                    else:
-                        logger.warning(f"Could not get opening price for {stock.symbol}")
-                except Exception as e:
-                    logger.error(f"Error applying VAH filter for {stock.symbol}: {e}")
-
-            logger.info(f"VAH filtering complete: {rejected_count} stocks rejected")
-
-        except Exception as e:
-            logger.error(f"Error in VAH filtering: {e}")
-
     def prepare_and_select_stocks(self):
         """Prepare entry levels and select stocks to trade"""
         logger.info("=== PREPARING ENTRIES AT 9:19 ===")
@@ -447,7 +377,7 @@ class LiveTradingOrchestrator:
             logger.info(f"🎯 Ready to trade: {stock.symbol} (Entry: {stock.entry_high:.2f}, SL: {stock.entry_sl:.2f})")
 
     def run(self):
-        """Main run method with graceful WebSocket cleanup"""
+        """Main run method"""
         try:
             logger.info("=== LIVE TRADING BOT STARTED ===")
 
@@ -495,26 +425,13 @@ class LiveTradingOrchestrator:
                 return
 
         except KeyboardInterrupt:
-            logger.info("Received keyboard interrupt - initiating graceful cleanup")
+            logger.info("Received keyboard interrupt")
         except Exception as e:
             logger.error(f"Error in main run: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
         finally:
-            # GRACEFUL WEBSOCKET CLEANUP (prevents lingering connections)
-            logger.info("Initiating graceful WebSocket cleanup...")
-            try:
-                if hasattr(self, 'data_streamer') and self.data_streamer:
-                    self.data_streamer.disconnect()
-                    logger.info("WebSocket disconnected gracefully")
-                    import time
-                    time.sleep(2)  # Give server time to process disconnect
-                else:
-                    logger.info("No active data streamer to disconnect")
-            except Exception as cleanup_err:
-                logger.error(f"WebSocket cleanup error: {cleanup_err}")
-
-            # Continue with normal cleanup
+            logger.info("Calling cleanup...")
             self.cleanup()
 
     def cleanup(self):
