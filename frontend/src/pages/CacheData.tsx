@@ -8,12 +8,9 @@ import {
   Grid,
   Chip,
   Alert,
-  LinearProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions
+  LinearProgress
 } from '@mui/material'
+import ToastNotification from '../components/ToastNotification'
 import {
   Refresh as RefreshIcon,
   Storage as StorageIcon,
@@ -43,8 +40,12 @@ const CacheData: React.FC = () => {
   const [operationStatus, setOperationStatus] = useState<OperationStatus | null>(null)
   const [operationId, setOperationId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
-  const [lastUpdateResult, setLastUpdateResult] = useState<any>(null)
+  const [toasts, setToasts] = useState<Array<{
+    id: string
+    message: string
+    type: 'success' | 'error' | 'warning'
+    position: number
+  }>>([])
 
   // Load cache information on component mount
   useEffect(() => {
@@ -115,8 +116,7 @@ const CacheData: React.FC = () => {
       if (data.status === 'completed') {
         setIsUpdating(false)
         setOperationId(null)
-        setLastUpdateResult(data.result)
-        setShowSuccessDialog(true)
+        showToast(`Cache has been successfully updated with the latest market data.\n\nUpdated data for: ${data.result.date}`, 'success')
         loadCacheInfo() // Refresh cache info
       } else if (data.status === 'error') {
         setIsUpdating(false)
@@ -147,6 +147,32 @@ const CacheData: React.FC = () => {
       case 'error': return <ErrorIcon />
       default: return <InfoIcon />
     }
+  }
+
+  // Toast notification system
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    const toastId = `toast-${Date.now()}-${Math.random()}`
+
+    // Find the lowest available position
+    const occupiedPositions = toasts.map(t => t.position).sort((a, b) => a - b)
+    let position = 0
+    for (let i = 0; i < occupiedPositions.length; i++) {
+      if (occupiedPositions[i] !== i) {
+        position = i
+        break
+      }
+    }
+    if (position === 0 && occupiedPositions.length > 0) {
+      position = occupiedPositions.length
+    }
+
+    const newToast = { id: toastId, message, type, position }
+
+    setToasts(prev => [...prev, newToast])
+  }
+
+  const removeToast = (toastId: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== toastId))
   }
 
   return (
@@ -266,26 +292,44 @@ const CacheData: React.FC = () => {
         )}
       </Grid>
 
-      {/* Success Dialog */}
-      <Dialog open={showSuccessDialog} onClose={() => setShowSuccessDialog(false)}>
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center' }}>
-          <CheckCircleIcon sx={{ mr: 1, color: 'success.main' }} />
-          Data Update Successful
-        </DialogTitle>
-        <DialogContent>
-          <Typography>
-            Cache has been successfully updated with the latest market data.
-          </Typography>
-          {lastUpdateResult && (
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              Updated data for: {lastUpdateResult.date}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowSuccessDialog(false)}>OK</Button>
-        </DialogActions>
-      </Dialog>
+      {/* Toast Notifications */}
+      {toasts.map((toast) => (
+        <Box
+          key={toast.id}
+          sx={{
+            position: 'fixed',
+            bottom: 24 + (toast.position * 60),
+            left: 24,
+            zIndex: 9999,
+            minWidth: 450,
+            maxWidth: 600,
+            animation: `slideInFromLeft 0.3s ease-out both`
+          }}
+        >
+          <ToastNotification
+            message={toast.message}
+            type={toast.type}
+            onClose={() => removeToast(toast.id)}
+            duration={3500}
+          />
+        </Box>
+      ))}
+
+      {/* Add custom animation for slide-in */}
+      <style>
+        {`
+          @keyframes slideInFromLeft {
+            from {
+              transform: translateX(-120%);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+        `}
+      </style>
     </Box>
   )
 }

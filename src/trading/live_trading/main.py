@@ -13,14 +13,22 @@ import pytz
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from .config import *
+from .config import (
+    REVERSAL_LIST_FILE,
+    CONTINUATION_LIST_FILE,
+    MARKET_OPEN,
+    ENTRY_DECISION_TIME,
+    PREP_END,
+    LOG_LEVEL,
+    LOG_FORMAT
+)
 from .stock_monitor import StockMonitor
 from .rule_engine import RuleEngine
 from .selection_engine import SelectionEngine
 from .paper_trader import PaperTrader
 from .reversal_monitor import ReversalMonitor
 from .volume_profile import volume_profile_calculator
-from utils.upstox_fetcher import UpstoxFetcher
+from ...utils.upstox_fetcher import UpstoxFetcher
 
 # Setup logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
@@ -384,10 +392,11 @@ class LiveTradingOrchestrator:
 
     def apply_vah_filtering(self):
         """Apply VAH filtering: reject stocks that open below previous day's VAH"""
-        logger.info("=== APPLYING VAH FILTERING ===")
+        logger.info("=== APPLYING SVRO - V (VALUE AREA) FILTERING ===")
 
         try:
             rejected_count = 0
+            qualified_count = 0
 
             # Get opening prices for all stocks
             for stock in self.monitor.get_active_stocks():
@@ -398,28 +407,42 @@ class LiveTradingOrchestrator:
                         open_price = float(ltp_data['open_price'])
                         stock.set_open_price(open_price)
 
+                        # Calculate gap percentage
+                        prev_close = self.prev_closes.get(stock.symbol, 0)
+                        if prev_close > 0:
+                            gap_pct = ((open_price - prev_close) / prev_close) * 100
+                        else:
+                            gap_pct = 0.0
+
                         # Check VAH condition
                         vah = self.vah_dict.get(stock.symbol)
                         if vah is not None:
+                            vah_status = "✅ VAH OK" if open_price >= vah else "❌ Below VAH"
+                            gap_status = "📈 Gap Up" if gap_pct > 0 else "📉 Gap Down"
+
                             if open_price < vah:
                                 # Reject stock
                                 stock.reject(f"Opened below VAH (Open: ₹{open_price:.2f} < VAH: ₹{vah:.2f})")
                                 self.paper_trader.log_rejection(stock, stock.rejection_reason)
                                 rejected_count += 1
-                                logger.info(f"❌ REJECTED: {stock.symbol} - Opened below VAH (₹{open_price:.2f} < ₹{vah:.2f})")
+                                status = "REJECTED"
                             else:
-                                logger.info(f"✅ QUALIFIED: {stock.symbol} - Open ₹{open_price:.2f} >= VAH ₹{vah:.2f}")
+                                qualified_count += 1
+                                status = "QUALIFIED"
+
+                            # Enhanced logging with SVRO details
+                            logger.info(f"{stock.symbol}: Open ₹{open_price:.2f} | {gap_status} {gap_pct:+.2f}% | VAH ₹{vah:.2f} | {vah_status} | {status}")
                         else:
-                            logger.warning(f"No VAH data for {stock.symbol}, skipping VAH filter")
+                            logger.warning(f"{stock.symbol}: Open ₹{open_price:.2f} | {gap_status} {gap_pct:+.2f}% | No VAH data | SKIPPED")
                     else:
                         logger.warning(f"Could not get opening price for {stock.symbol}")
                 except Exception as e:
                     logger.error(f"Error applying VAH filter for {stock.symbol}: {e}")
 
-            logger.info(f"VAH filtering complete: {rejected_count} stocks rejected")
+            logger.info(f"SVRO-V filtering complete: {qualified_count} qualified, {rejected_count} rejected")
 
         except Exception as e:
-            logger.error(f"Error in VAH filtering: {e}")
+            logger.error(f"Error in SVRO-V filtering: {e}")
 
     def prepare_and_select_stocks(self):
         """Prepare entry levels and select stocks to trade"""

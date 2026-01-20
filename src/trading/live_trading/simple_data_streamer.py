@@ -74,22 +74,25 @@ class SimpleStockStreamer:
                 ohlc_list = []
 
                 if isinstance(feed_data, dict):
+                    # Try different possible data structures
+                    ff = None
                     if 'fullFeed' in feed_data:
-                        full_feed = feed_data['fullFeed']
-                        if isinstance(full_feed, dict) and 'marketFF' in full_feed:
-                            market_ff = full_feed['marketFF']
-                            if isinstance(market_ff, dict):
-                                # Extract LTPC
-                                if 'ltpc' in market_ff:
-                                    ltpc_data = market_ff['ltpc']
-                                    if isinstance(ltpc_data, dict):
-                                        ltp = ltpc_data.get('ltp')
+                        ff = feed_data['fullFeed']
+                    elif 'ff' in feed_data:  # Alternative structure
+                        ff = feed_data['ff']
 
-                                # Extract OHLC candles
-                                if 'marketOHLC' in market_ff:
-                                    market_ohlc = market_ff['marketOHLC']
-                                    if isinstance(market_ohlc, dict) and 'ohlc' in market_ohlc:
-                                        ohlc_list = market_ohlc['ohlc']
+                    if ff and isinstance(ff, dict):
+                        # Extract LTPC (LTP data)
+                        if 'ltpc' in ff:
+                            ltpc_data = ff['ltpc']
+                            if isinstance(ltpc_data, dict):
+                                ltp = ltpc_data.get('ltp')
+
+                        # Extract OHLC candles (for opening prices)
+                        if 'marketOHLC' in ff:
+                            market_ohlc = ff['marketOHLC']
+                            if isinstance(market_ohlc, dict) and 'ohlc' in market_ohlc:
+                                ohlc_list = market_ohlc['ohlc']
 
                 if ltp is not None:
                     ltp = float(ltp)
@@ -118,8 +121,9 @@ class SimpleStockStreamer:
         time.sleep(1)
 
         try:
+            # Subscribe to full mode (includes both LTP and OHLC data)
             self.streamer.subscribe(self.instrument_keys, "full")
-            print(f"Subscribed to {len(self.instrument_keys)} instruments at {datetime.now(IST).strftime('%H:%M:%S')}")
+            print(f"Subscribed to {len(self.instrument_keys)} instruments in 'full' mode (LTP + OHLC) at {datetime.now(IST).strftime('%H:%M:%S')}")
         except Exception as e:
             print(f"Subscription error at {datetime.now(IST).strftime('%H:%M:%S')}: {e}")
 

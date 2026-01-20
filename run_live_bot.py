@@ -12,13 +12,18 @@ from datetime import datetime, time
 import pytz
 import psutil
 import portalocker
+import logging
 
 # Add src to path
 sys.path.append('src')
 
+# Configure logging to show detailed VAH calculation info
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
+
 # Global variables for tick handler
 global_selected_stocks = []
 global_selected_symbols = set()
+global_vah_dict = {}  # Store VAH values calculated during prep phase
 
 def kill_duplicate_processes():
     """Kill any other instances of this bot to prevent WebSocket conflicts"""
@@ -85,14 +90,16 @@ def run_live_trading_bot():
     # Import components directly
     sys.path.append('src/trading/live_trading')
 
-    from stock_monitor import StockMonitor
-    from reversal_monitor import ReversalMonitor
-    from rule_engine import RuleEngine
-    from selection_engine import SelectionEngine
-    from paper_trader import PaperTrader
-    from simple_data_streamer import SimpleStockStreamer
-    from utils.upstox_fetcher import UpstoxFetcher
-    from config import MARKET_OPEN, ENTRY_DECISION_TIME, TEST_MODE, SIMULATE_OPENING_PRICES
+    from src.trading.live_trading.stock_monitor import StockMonitor
+    from src.trading.live_trading.reversal_monitor import ReversalMonitor
+    from src.trading.live_trading.rule_engine import RuleEngine
+    from src.trading.live_trading.selection_engine import SelectionEngine
+    from src.trading.live_trading.paper_trader import PaperTrader
+    from src.trading.live_trading.simple_data_streamer import SimpleStockStreamer
+
+    from src.trading.live_trading.volume_profile import volume_profile_calculator
+    from src.utils.upstox_fetcher import UpstoxFetcher
+    from config import MARKET_OPEN, ENTRY_DECISION_TIME
 
     # Create components
     upstox_fetcher = UpstoxFetcher()
@@ -108,11 +115,11 @@ def run_live_trading_bot():
     print()
 
     # Parse command-line arguments
-    from bot_args import parse_bot_arguments
+    from src.trading.live_trading.bot_args import parse_bot_arguments
     bot_config = parse_bot_arguments()
 
     # Load stock configuration based on mode
-    from stock_classifier import StockClassifier
+    from src.trading.live_trading.stock_classifier import StockClassifier
     classifier = StockClassifier()
     stock_config = classifier.get_stock_configuration(bot_config['mode'])
 
@@ -165,6 +172,20 @@ def run_live_trading_bot():
     def tick_handler(instrument_key, symbol, price, timestamp, ohlc_list=None):
         global global_selected_stocks, global_selected_symbols
         monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
+
+        # Capture opening prices from first OHLC tick AFTER market open (REQUIRED for SVRO-V filtering)
+        current_time = datetime.now(IST).time()
+        if ohlc_list and bot_config['mode'] == 'c' and current_time >= MARKET_OPEN:
+            for candle in ohlc_list:
+                if isinstance(candle, dict) and candle.get('interval') == 'I1':
+                    stock = monitor.stocks.get(instrument_key)
+                    if stock and not hasattr(stock, 'opening_price_captured'):
+                        opening_price = float(candle.get('open', 0))
+                        if opening_price > 0:
+                            stock.set_open_price(opening_price)
+                            stock.opening_price_captured = True
+                            print(f"CAPTURED opening price for {symbol}: Rs{opening_price:.2f}")
+                    break
 
         # Process OOPS reversal logic
         if bot_config['mode'] == 'r':
@@ -262,9 +283,51 @@ def run_live_trading_bot():
         print("=== PREP TIME: Loading metadata and preparing data ===")
 
         # Load stock scoring metadata (ADR, volume baselines, etc.)
-        from stock_scorer import stock_scorer
+        from src.trading.live_trading.stock_scorer import stock_scorer
         stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
         print("OK Stock metadata loaded for scoring")
+
+        # Calculate VAH from previous day's volume profile (for continuation mode)
+        global global_vah_dict
+        if bot_config['mode'] == 'c':  # Only for continuation mode
+            print("Calculating VAH from previous day's volume profile...")
+            continuation_symbols = [symbol for symbol, situation in situations.items() if situation == 'continuation']
+            print(f"Continuation symbols: {continuation_symbols}")
+            if continuation_symbols:
+                try:
+                    result = volume_profile_calculator.calculate_vah_for_stocks(continuation_symbols)
+                    global_vah_dict = result
+
+                    print(f"VAH calculated for {len(global_vah_dict)} continuation stocks")
+
+                    # Save VAH results to file for frontend display
+                    if global_vah_dict:
+                        import json
+                        vah_results = {
+                            'timestamp': datetime.now().isoformat(),
+                            'mode': 'continuation',
+                            'results': global_vah_dict,
+                            'summary': f"{len(global_vah_dict)} stocks calculated"
+                        }
+
+                        with open('vah_results.json', 'w') as f:
+                            json.dump(vah_results, f, indent=2)
+
+                        print(f"VAH results saved to vah_results.json")
+
+                    # Print VAH results explicitly for UI visibility
+                    if global_vah_dict:
+                        print("VAH CALCULATION RESULTS:")
+                        for symbol, vah in global_vah_dict.items():
+                            print(f"[OK] {symbol}: Upper Range (VAH) = Rs{vah:.2f}")
+                        print(f"Summary: {len(global_vah_dict)} stocks successfully calculated")
+
+                except Exception as e:
+                    print(f"VAH calculation error: {e}")
+                    global_vah_dict = {}
+            else:
+                global_vah_dict = {}
+                print("No continuation stocks to calculate VAH for")
 
         # Wait for prep end (9:14:30)
         prep_end = time(9, 14, 30)
@@ -303,7 +366,93 @@ def run_live_trading_bot():
 
             print("MARKET OPEN! Monitoring live data...")
 
-            # At ENTRY_DECISION_TIME, prepare entries
+            # Wait 1 minute for first 1-minute candle to complete (14:55-14:56)
+            print("WAITING 60 seconds for first 1-minute candle to complete...")
+            time_module.sleep(60)
+
+            # Fetch OHLC data immediately to get true market opening prices
+            print("\n=== FETCHING OPENING PRICES FROM FIRST 1-MINUTE CANDLE ===")
+            symbols = [stock.symbol for stock in monitor.stocks.values() if stock.situation == 'continuation']
+            ohlc_data = upstox_fetcher.get_current_ohlc(symbols)
+
+            # Run SVRO-V analysis immediately with true opening prices
+            if bot_config['mode'] == 'c' and global_vah_dict:  # Only for continuation mode with pre-calculated VAH
+                print("\n📊 SVRO-V STOCK ANALYSIS (Market Open + 1min)")
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+                # Apply VAH filtering using pre-calculated VAH and REST OHLC opening prices
+                rejected_count = 0
+                qualified_count = 0
+                gap_rejections = 0
+                vah_rejections = 0
+
+                for stock in monitor.stocks.values():
+                    if stock.situation == 'continuation':
+                        try:
+                            # Get opening price from REST OHLC data
+                            symbol_ohlc = ohlc_data.get(stock.symbol, {})
+                            open_price = symbol_ohlc.get('open')
+
+                            if open_price:
+                                # Calculate gap percentage
+                                prev_close = stock.previous_close
+                                gap_pct = ((open_price - prev_close) / prev_close) * 100 if prev_close > 0 else 0.0
+
+                                # Get gap thresholds from config
+                                from config import GAP_UP_MIN, GAP_UP_MAX
+
+                                # Apply SVRO-V dual criteria filtering
+                                vah = global_vah_dict.get(stock.symbol)
+                                gap_arrow = "↑" if gap_pct > 0 else "↓"
+
+                                # Check gap conditions first
+                                if gap_pct < GAP_UP_MIN:
+                                    stock.reject(f"Insufficient gap up: {gap_pct:+.2f}% < {GAP_UP_MIN*100:.1f}%")
+                                    paper_trader.log_rejection(stock, stock.rejection_reason)
+                                    rejected_count += 1
+                                    gap_rejections += 1
+                                    reason = "Gap"
+                                    emoji = "❌"
+                                elif gap_pct > GAP_UP_MAX:
+                                    stock.reject(f"Excessive gap up: {gap_pct:+.2f}% > {GAP_UP_MAX*100:.1f}%")
+                                    paper_trader.log_rejection(stock, stock.rejection_reason)
+                                    rejected_count += 1
+                                    gap_rejections += 1
+                                    reason = "Gap"
+                                    emoji = "❌"
+                                elif vah is not None and open_price < vah:
+                                    # Gap OK, now check VAH
+                                    stock.reject(f"Opened below VAH (Open: Rs{open_price:.2f} < VAH: Rs{vah:.2f})")
+                                    paper_trader.log_rejection(stock, stock.rejection_reason)
+                                    rejected_count += 1
+                                    vah_rejections += 1
+                                    reason = "VAH"
+                                    emoji = "❌"
+                                else:
+                                    # All conditions passed
+                                    qualified_count += 1
+                                    reason = "OK"
+                                    emoji = "✅"
+
+                                # Clean formatted output
+                                print(f"{stock.symbol}: ₹{open_price:.2f} ({gap_pct:+.2f}% {gap_arrow}) vs VAH ₹{vah:.2f} → {emoji} {reason}")
+                            else:
+                                print(f"{stock.symbol}: No opening price data → ❌ SKIPPED")
+                        except Exception as e:
+                            print(f"{stock.symbol}: Error in analysis → ❌ ERROR")
+
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                if qualified_count > 0:
+                    print(f"🎯 DECISION: {qualified_count} stocks qualified for SVRO trading")
+                else:
+                    if gap_rejections > 0 and vah_rejections == 0:
+                        print(f"📉 DECISION: All {rejected_count} stocks rejected - insufficient gap up (< {GAP_UP_MIN*100:.1f}%)")
+                    elif vah_rejections > 0:
+                        print(f"📊 DECISION: {gap_rejections} gap rejections, {vah_rejections} VAH rejections")
+                    else:
+                        print(f"❌ DECISION: All {rejected_count} stocks rejected")
+
+            # Continue with normal entry decision timing
             entry_decision_time = ENTRY_DECISION_TIME
             current_time = datetime.now(IST).time()
 
@@ -314,24 +463,40 @@ def run_live_trading_bot():
                 current_datetime = datetime.now(IST)
                 wait_seconds = (decision_datetime - current_datetime).total_seconds()
                 if wait_seconds > 0:
-                    print(f"WAITING {wait_seconds:.0f} seconds until entry decision...")
+                    print(f"\nWAITING {wait_seconds:.0f} seconds until entry decision...")
                     time_module.sleep(wait_seconds)
+
+            # SVRO-V analysis already completed above (Market Open + 1min)
+            # Continue with normal entry decision flow
 
             # Prepare entries and select stocks
             print("\n=== PREPARING ENTRIES ===")
 
-            # Show current status before qualification
-            print("PRE-QUALIFICATION STATUS:")
+            # Show current status after SVRO-V filtering
+            print("POST-SVRO QUALIFICATION STATUS:")
             for stock in monitor.stocks.values():
                 open_status = f"Open: Rs{stock.open_price:.2f}" if stock.open_price else "No opening price"
-                gap_status = "Gap validated" if stock.gap_validated else "Gap not validated"
+
+                # Calculate gap percentage
+                gap_pct = 0.0
+                if stock.open_price and stock.previous_close:
+                    gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
+
+                gap_status = "Gap validated" if stock.gap_validated else f"Gap: {gap_pct:+.2f}%"
                 low_status = "Low checked" if stock.low_violation_checked else "Low not checked"
+
                 situation_desc = {
                     'continuation': 'Cont',
                     'reversal_s1': 'Rev-U',
                     'reversal_s2': 'Rev-D'
                 }.get(stock.situation, stock.situation)
-                print(f"   {stock.symbol} ({situation_desc}): {open_status} | {gap_status} | {low_status}")
+
+                # Show rejection reason if any
+                rejection_info = ""
+                if stock.rejection_reason:
+                    rejection_info = f" | REJECTED: {stock.rejection_reason}"
+
+                print(f"   {stock.symbol} ({situation_desc}): {open_status} | {gap_status} | {low_status}{rejection_info}")
 
             monitor.prepare_entries()
 

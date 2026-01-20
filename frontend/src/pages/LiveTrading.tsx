@@ -8,9 +8,6 @@ import {
   Button,
   Alert,
   CircularProgress,
-  Grid,
-  Card,
-  CardContent,
   Chip,
   RadioGroup,
   FormControlLabel,
@@ -23,7 +20,6 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
@@ -407,6 +403,8 @@ const LiveTrading: React.FC = () => {
     }
   };
 
+
+
   return (
     <Box sx={{ width: '100%', typography: 'body1' }}>
       {/* Live Trading Sub-navigation - Similar to Scanner */}
@@ -743,15 +741,6 @@ const LiveTrading: React.FC = () => {
                   {validationResult}
                 </ValidationResult>
               )}
-
-              <Alert severity="info" sx={{ mt: 3 }}>
-                <Typography variant="body2">
-                  <strong>Note:</strong> This validation checks:
-                  <br />• Upstox instrument key availability
-                  <br />• Live price (LTP) data accessibility
-                  <br />• Proper list formatting (continuation vs reversal with -u/-d suffixes)
-                </Typography>
-              </Alert>
             </Box>
           )}
 
@@ -792,6 +781,8 @@ const LiveTrading: React.FC = () => {
                   </RadioGroup>
                 </FormControl>
               </Box>
+
+
 
               {/* Control Buttons */}
               <Box sx={{ mb: 4, display: 'flex', gap: 2, alignItems: 'center' }}>

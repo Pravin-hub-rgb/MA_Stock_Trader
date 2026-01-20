@@ -288,6 +288,112 @@ class UpstoxFetcher:
             logger.error(f"All LTP methods failed for {symbol}: {e}")
             return {}
 
+    def get_current_ohlc(self, symbols: List[str]) -> Dict[str, Dict]:
+        """
+        Get current OHLC data for multiple symbols using REST API
+        Reliable alternative to WebSocket OHLC for opening prices
+        """
+        ohlc_dict = {}
+
+        try:
+            # Get instrument keys for all symbols
+            keys = []
+            symbol_map = {}
+            for symbol in symbols:
+                key = self.get_instrument_key(symbol)
+                if key:
+                    keys.append(key)
+                    symbol_map[key] = symbol
+
+            if not keys:
+                logger.warning("No valid instrument keys found")
+                return ohlc_dict
+
+            # Batch request for multiple instruments (use I1 for 1-minute candles)
+            url = f"https://api.upstox.com/v3/market-quote/ohlc?instrument_key={','.join(keys)}&interval=I1"
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.access_token}"
+            }
+
+            response = requests.get(url, headers=headers)
+            response_data = response.json()
+
+            print(f"DEBUG OHLC: Calling URL: {url}")
+            print(f"DEBUG OHLC: Keys being requested: {keys}")
+
+            if response.status_code == 200 and response_data.get('status') == 'success':
+                data = response_data.get('data', {})
+                print(f"DEBUG OHLC: Response status: {response.status_code}")
+                print(f"DEBUG OHLC: Response data keys: {list(data.keys()) if data else 'EMPTY'}")
+                print(f"DEBUG OHLC: Full response data: {data}")
+
+                for instrument_key, instrument_data in data.items():
+                    # Try multiple ways to find the symbol
+                    symbol = symbol_map.get(instrument_key)
+
+                    # If direct lookup fails, try extracting from instrument_token
+                    if not symbol and 'instrument_token' in instrument_data:
+                        token = instrument_data['instrument_token']
+                        # Find which symbol this token belongs to
+                        for orig_key, sym in symbol_map.items():
+                            if orig_key == token:  # Exact match
+                                symbol = sym
+                                break
+
+                    print(f"DEBUG OHLC: Processing key {instrument_key} -> symbol {symbol}")
+                    print(f"DEBUG OHLC: Instrument data keys: {list(instrument_data.keys())}")
+
+                    if symbol:
+                        # Check for live_ohlc data (current day's OHLC)
+                        live_ohlc = instrument_data.get('live_ohlc', {})
+                        if live_ohlc and 'open' in live_ohlc:
+                            # Use live OHLC data
+                            ohlc = {
+                                'open': live_ohlc.get('open'),
+                                'high': live_ohlc.get('high'),
+                                'low': live_ohlc.get('low'),
+                                'close': live_ohlc.get('close')
+                            }
+                            ohlc_dict[symbol] = ohlc
+                            print(f"SUCCESS: {symbol} OHLC = {ohlc}")
+                        else:
+                            print(f"No live_ohlc data for {symbol}")
+                    else:
+                        print(f"Could not map {instrument_key} to symbol")
+            else:
+                print(f"OHLC API error - Status: {response.status_code}, Response: {response_data}")
+                print(f"DEBUG OHLC: Raw response text: {response.text}")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch OHLC data: {e}")
+
+        return ohlc_dict
+
+    def get_ohlc_data(self, symbol: str) -> Dict:
+        """
+        Get OHLC data for current day's opening price using LTP API (which includes opening prices)
+        """
+        try:
+            # Use the LTP endpoint which reliably returns opening prices
+            ltp_data = self.get_ltp_data(symbol)
+
+            if ltp_data and 'open' in ltp_data:
+                # Return OHLC format from LTP data
+                return {
+                    'open': ltp_data.get('open'),
+                    'high': ltp_data.get('high'),
+                    'low': ltp_data.get('low'),
+                    'close': ltp_data.get('cp')  # Previous close
+                }
+
+            logger.warning(f"No opening price in LTP data for {symbol}")
+            return {}
+
+        except Exception as e:
+            logger.error(f"OHLC data fetch failed for {symbol}: {e}")
+            return {}
+
     def _get_ltp_data_fallback(self, symbol: str) -> Dict:
         """
         Fallback LTP data fetch using direct HTTP request (for SDK compatibility)

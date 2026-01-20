@@ -26,7 +26,7 @@ class StockClassifier:
                 content = f.read().strip()
                 symbols = [s.strip() for s in content.split(',') if s.strip()]
 
-            print(f"Loaded {len(symbols)} continuation stocks: {symbols}")
+            # Removed verbose logging - now handled in main orchestrator
             return symbols
 
         except FileNotFoundError:

@@ -41,7 +41,7 @@ class TradingListValidator:
 
         Returns:
             List of tuples: (display_symbol, clean_symbol)
-            display_symbol: symbol as written in file (with -u/-d suffixes)
+            display_symbol: symbol as written in file (with -TREND_PERIOD suffixes)
             clean_symbol: symbol without suffixes for Upstox validation
         """
         try:
@@ -54,10 +54,17 @@ class TradingListValidator:
 
                 processed_symbols = []
                 for raw_symbol in raw_symbols:
-                    # Handle reversal list suffixes (-u, -d)
-                    if raw_symbol.endswith('-u') or raw_symbol.endswith('-d'):
-                        clean_symbol = raw_symbol[:-2]  # Remove -u or -d
-                        display_symbol = raw_symbol
+                    # Handle reversal list suffixes (-uNUMBER, -dNUMBER) or simple (-u, -d)
+                    if '-' in raw_symbol:
+                        # Split on the last '-' to handle formats like SYMBOL-u6, SYMBOL-d14
+                        parts = raw_symbol.rsplit('-', 1)
+                        if len(parts) == 2:
+                            clean_symbol = parts[0]  # Everything before the last -
+                            display_symbol = raw_symbol
+                        else:
+                            # Fallback for any edge cases
+                            clean_symbol = raw_symbol
+                            display_symbol = raw_symbol
                     else:
                         # Continuation list - no suffix
                         clean_symbol = raw_symbol

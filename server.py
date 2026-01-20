@@ -6,6 +6,7 @@ FastAPI server providing REST API endpoints for all trading operations
 import sys
 import os
 import logging
+import json
 from pathlib import Path
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any
@@ -487,6 +488,26 @@ async def get_live_trading_status():
         'total_logs': len(bot_logs),
         'timestamp': datetime.now().isoformat()
     }
+
+@app.get("/api/live-trading/vah-results")
+async def get_vah_results():
+    """Get VAH calculation results for display in frontend"""
+    try:
+        vah_file = Path('vah_results.json')
+
+        if vah_file.exists():
+            with open(vah_file, 'r') as f:
+                data = json.load(f)
+                return data
+        else:
+            return {
+                'message': 'VAH results not available yet. Start the bot to calculate VAH values.',
+                'timestamp': datetime.now().isoformat()
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to read VAH results: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read VAH results: {str(e)}")
 
 # Data Management
 

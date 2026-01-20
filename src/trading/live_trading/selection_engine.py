@@ -9,7 +9,7 @@ import logging
 from typing import List, Dict, Optional
 
 # Import from local config file
-from .config import MAX_STOCKS_TO_TRADE
+from config import MAX_STOCKS_TO_TRADE
 from stock_monitor import StockState
 
 logger = logging.getLogger(__name__)
