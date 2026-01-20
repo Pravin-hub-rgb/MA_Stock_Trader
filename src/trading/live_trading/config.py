@@ -18,7 +18,7 @@ ENTRY_PREP_TIME = ENTRY_DECISION_TIME
 MAX_STOCKS_TO_TRADE = 2        # Maximum stocks to trade per day (matches reversal logic)
 
 # Gap up conditions
-GAP_UP_MIN = 0.0               # Minimum gap up % (above previous close)
+GAP_UP_MIN = 0.002             # Minimum gap up % (above previous close) - 0.20% for SVRO strong start
 GAP_UP_MAX = 0.05              # Maximum gap up % (5% max)
 
 # Low violation

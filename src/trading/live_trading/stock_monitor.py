@@ -38,6 +38,7 @@ class StockState:
         self.is_active = True  # Still being monitored
         self.gap_validated = False  # Renamed from gap_up_validated for reversal
         self.low_violation_checked = False
+        self.volume_validated = False  # SVRO relative volume requirement
         self.entry_ready = False
         self.entered = False
 
@@ -119,6 +120,22 @@ class StockState:
             return False
 
         self.low_violation_checked = True
+        return True
+
+    def validate_volume(self, volume_baseline: float, min_ratio: float = 0.05) -> bool:
+        """Validate relative volume for SVRO - must have minimum activity"""
+        if volume_baseline <= 0:
+            self.reject("No volume baseline available")
+            return False
+
+        volume_ratio = self.early_volume / volume_baseline
+
+        if volume_ratio < min_ratio:
+            self.reject(f"Insufficient relative volume: {volume_ratio:.1%} < {min_ratio:.1%} (SVRO requirement)")
+            return False
+
+        self.volume_validated = True
+        logger.info(f"[{self.symbol}] Volume validated: {volume_ratio:.1%} >= {min_ratio:.1%}")
         return True
 
     def prepare_entry(self):
@@ -229,10 +246,19 @@ class StockMonitor:
         rejected = []
 
         for stock in self.stocks.values():
-            if stock.is_active and stock.gap_validated and stock.low_violation_checked:
-                qualified.append(stock)
+            # For SVRO continuation: all 4 conditions must be met
+            if stock.situation == 'continuation':
+                if (stock.is_active and stock.gap_validated and
+                    stock.low_violation_checked and stock.volume_validated):
+                    qualified.append(stock)
+                else:
+                    rejected.append(stock)
             else:
-                rejected.append(stock)
+                # For reversals: only gap and low violation required
+                if stock.is_active and stock.gap_validated and stock.low_violation_checked:
+                    qualified.append(stock)
+                else:
+                    rejected.append(stock)
 
         # Log qualified stocks
         if qualified:
@@ -340,6 +366,28 @@ class StockMonitor:
         for stock in self.get_active_stocks():
             if stock.gap_validated and not stock.low_violation_checked and stock.open_price:
                 stock.check_low_violation()
+
+    def check_volume_validations(self):
+        """Check volume validations for continuation stocks that haven't been checked yet"""
+        # Lazy import to avoid circular dependencies
+        import sys
+        import os
+        parent_dir = os.path.dirname(os.path.dirname(__file__))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        from scanner.stock_scorer import stock_scorer
+
+        for stock in self.get_active_stocks():
+            if (stock.situation == 'continuation' and stock.gap_validated and
+                stock.low_violation_checked and not stock.volume_validated):
+                # Get volume baseline for this stock
+                try:
+                    metadata = stock_scorer.stock_metadata.get(stock.symbol, {})
+                    volume_baseline = metadata.get('volume_baseline', 1000000)
+                    stock.validate_volume(volume_baseline)
+                except Exception as e:
+                    logger.error(f"Error validating volume for {stock.symbol}: {e}")
+                    stock.reject("Volume validation error")
 
     def accumulate_volume(self, instrument_key: str, volume: float):
         """Accumulate volume during 9:15-9:20 monitoring window"""

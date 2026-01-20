@@ -345,6 +345,10 @@ class LiveTradingOrchestrator:
 
                     # At 9:19, prepare entries and select stocks
                     if current_time >= ENTRY_DECISION_TIME:
+                        # Check volume validations for SVRO continuation stocks
+                        if not self.reversal_mode:
+                            self.monitor.check_volume_validations()
+
                         self.prepare_and_select_stocks()
                         break  # Exit loop after setup
 
