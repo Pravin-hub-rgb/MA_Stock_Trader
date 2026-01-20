@@ -934,6 +934,99 @@ async def finalize_reversal_list():
         logger.error(f"Failed to finalize reversal list: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Trading Files Management
+
+@app.get("/api/stocks/trading-files/{list_type}")
+async def get_trading_file_contents(list_type: str):
+    """Get contents of trading list files (.txt files that bot reads)"""
+    try:
+        from pathlib import Path
+
+        if list_type not in ['continuation', 'reversal']:
+            raise HTTPException(status_code=400, detail="Invalid list type. Must be 'continuation' or 'reversal'")
+
+        # Use server script directory as base (not current working directory)
+        server_dir = Path(__file__).parent
+
+        # Determine file path relative to server location
+        if list_type == 'continuation':
+            file_path = server_dir / 'src/trading/continuation_list.txt'
+        else:
+            file_path = server_dir / 'src/trading/reversal_list.txt'
+
+        # Read file contents
+        if file_path.exists():
+            with open(file_path, 'r') as f:
+                content = f.read().strip()
+
+            # Parse content for display
+            if content:
+                symbols = [s.strip() for s in content.split(',') if s.strip()]
+            else:
+                symbols = []
+
+            # Get file modification time
+            import os
+            mtime = os.path.getmtime(file_path)
+            from datetime import datetime
+            last_modified = datetime.fromtimestamp(mtime).isoformat()
+
+            return {
+                'file_path': str(file_path),
+                'content': content,
+                'symbols': symbols,
+                'symbol_count': len(symbols),
+                'last_modified': last_modified,
+                'exists': True
+            }
+        else:
+            return {
+                'file_path': str(file_path),
+                'content': '',
+                'symbols': [],
+                'symbol_count': 0,
+                'last_modified': None,
+                'exists': False
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to read trading file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read trading file: {str(e)}")
+
+@app.delete("/api/stocks/trading-files/{list_type}")
+async def clear_trading_file(list_type: str):
+    """Clear trading list file (.txt file that bot reads)"""
+    try:
+        from pathlib import Path
+
+        if list_type not in ['continuation', 'reversal']:
+            raise HTTPException(status_code=400, detail="Invalid list type. Must be 'continuation' or 'reversal'")
+
+        # Use server script directory as base (not current working directory)
+        server_dir = Path(__file__).parent
+
+        # Determine file path relative to server location
+        if list_type == 'continuation':
+            file_path = server_dir / 'src/trading/continuation_list.txt'
+        else:
+            file_path = server_dir / 'src/trading/reversal_list.txt'
+
+        # Clear the file by writing empty content
+        with open(file_path, 'w') as f:
+            f.write('')
+
+        return {
+            'message': f'Cleared {list_type} trading file',
+            'file_path': str(file_path),
+            'timestamp': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to clear trading file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear trading file: {str(e)}")
+
 # Token Management
 
 @app.post("/api/token/validate")

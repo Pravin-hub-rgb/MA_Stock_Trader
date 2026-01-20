@@ -46,6 +46,15 @@ interface ReversalStock {
   added_from: string
 }
 
+interface TradingFileData {
+  file_path: string
+  content: string
+  symbols: string[]
+  symbol_count: number
+  last_modified: string | null
+  exists: boolean
+}
+
 const StocksList: React.FC = () => {
   const [continuationStocks, setContinuationStocks] = useState<ContinuationStock[]>([])
   const [reversalStocks, setReversalStocks] = useState<ReversalStock[]>([])
@@ -70,11 +79,30 @@ const StocksList: React.FC = () => {
   }>>([])
   const [nextToastPosition, setNextToastPosition] = useState(0)
 
-  // Load stocks on mount
+  // Trading file states
+  const [continuationTradingFile, setContinuationTradingFile] = useState<TradingFileData | null>(null)
+  const [reversalTradingFile, setReversalTradingFile] = useState<TradingFileData | null>(null)
+
+  // Load stocks and trading files on mount
   useEffect(() => {
     loadContinuationStocks()
     loadReversalStocks()
+    loadTradingFiles()
   }, [])
+
+  const loadTradingFiles = async () => {
+    try {
+      const [continuationResponse, reversalResponse] = await Promise.all([
+        axios.get('/api/stocks/trading-files/continuation'),
+        axios.get('/api/stocks/trading-files/reversal')
+      ])
+
+      setContinuationTradingFile(continuationResponse.data)
+      setReversalTradingFile(reversalResponse.data)
+    } catch (error) {
+      console.error('Failed to load trading files:', error)
+    }
+  }
 
   const loadContinuationStocks = async () => {
     try {
@@ -236,6 +264,18 @@ const StocksList: React.FC = () => {
     setToasts(prev => prev.filter(toast => toast.id !== toastId))
   }
 
+  const handleClearTradingFile = async (listType: 'continuation' | 'reversal') => {
+    try {
+      await axios.delete(`/api/stocks/trading-files/${listType}`)
+      showToast(`✅ Cleared ${listType} trading file`, 'success')
+      // Reload trading files to reflect the change
+      loadTradingFiles()
+    } catch (error) {
+      console.error(`Failed to clear ${listType} trading file:`, error)
+      showToast(`❌ Failed to clear ${listType} trading file`, 'error')
+    }
+  }
+
   return (
     <Box sx={{ minHeight: '100vh' }}>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 4 }}>
@@ -395,6 +435,103 @@ const StocksList: React.FC = () => {
                   </Typography>
                 </Box>
               )}
+
+              {/* Final Trading List Section */}
+              <Box sx={{ mt: 3, mb: 2 }}>
+                <Card sx={{
+                  background: 'linear-gradient(135deg, #0d0d0d 0%, #111111 100%)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: 2
+                }}>
+                  <CardContent sx={{ p: 0 }}>
+                    {/* Header */}
+                    <Box sx={{
+                      p: 2,
+                      borderBottom: '1px solid rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{
+                            fontWeight: 600,
+                            color: '#10b981',
+                            fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                            fontSize: '0.9rem'
+                          }}
+                        >
+                          📄 continuation_list.txt
+                        </Typography>
+                        <Chip
+                          label={`${continuationTradingFile?.symbol_count || 0} stocks`}
+                          size="small"
+                          sx={{
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            color: '#10b981',
+                            fontSize: '0.7rem',
+                            fontWeight: 600
+                          }}
+                        />
+                      </Box>
+
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleClearTradingFile('continuation')}
+                        disabled={!continuationTradingFile?.exists || (continuationTradingFile?.symbol_count || 0) === 0}
+                        startIcon={<ClearAllIcon />}
+                        sx={{
+                          borderColor: 'rgba(239, 68, 68, 0.5)',
+                          color: '#ef4444',
+                          fontSize: '0.75rem',
+                          '&:hover': {
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)'
+                          }
+                        }}
+                      >
+                        Clear Trading Files
+                      </Button>
+                    </Box>
+
+                    {/* Terminal-style content display */}
+                    <Box sx={{
+                      p: 2,
+                      backgroundColor: '#000000',
+                      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                      fontSize: '0.85rem',
+                      color: '#00ff00',
+                      minHeight: 80,
+                      borderRadius: '0 0 8px 8px'
+                    }}>
+                      {continuationTradingFile?.exists ? (
+                        <Box>
+                          <Box sx={{ color: '#ffffff', mb: 1, fontSize: '0.8rem' }}>
+                            $ cat continuation_list.txt
+                          </Box>
+                          <Box sx={{
+                            color: continuationTradingFile.content.trim() ? '#00ff00' : '#666666',
+                            fontWeight: continuationTradingFile.content.trim() ? 500 : 400
+                          }}>
+                            {continuationTradingFile.content.trim() || '(empty file)'}
+                          </Box>
+                          {continuationTradingFile.last_modified && (
+                            <Box sx={{ color: '#666666', mt: 1, fontSize: '0.7rem' }}>
+                              Last modified: {new Date(continuationTradingFile.last_modified).toLocaleString()}
+                            </Box>
+                          )}
+                        </Box>
+                      ) : (
+                        <Box sx={{ color: '#666666', fontStyle: 'italic' }}>
+                          File not found
+                        </Box>
+                      )}
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -559,6 +696,103 @@ const StocksList: React.FC = () => {
                   </Typography>
                 </Box>
               )}
+
+              {/* Final Trading List Section */}
+              <Box sx={{ mt: 3, mb: 2 }}>
+                <Card sx={{
+                  background: 'linear-gradient(135deg, #0d0d0d 0%, #111111 100%)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: 2
+                }}>
+                  <CardContent sx={{ p: 0 }}>
+                    {/* Header */}
+                    <Box sx={{
+                      p: 2,
+                      borderBottom: '1px solid rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{
+                            fontWeight: 600,
+                            color: '#f59e0b',
+                            fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                            fontSize: '0.9rem'
+                          }}
+                        >
+                          📄 reversal_list.txt
+                        </Typography>
+                        <Chip
+                          label={`${reversalTradingFile?.symbol_count || 0} stocks`}
+                          size="small"
+                          sx={{
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            color: '#f59e0b',
+                            fontSize: '0.7rem',
+                            fontWeight: 600
+                          }}
+                        />
+                      </Box>
+
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleClearTradingFile('reversal')}
+                        disabled={!reversalTradingFile?.exists || (reversalTradingFile?.symbol_count || 0) === 0}
+                        startIcon={<ClearAllIcon />}
+                        sx={{
+                          borderColor: 'rgba(239, 68, 68, 0.5)',
+                          color: '#ef4444',
+                          fontSize: '0.75rem',
+                          '&:hover': {
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)'
+                          }
+                        }}
+                      >
+                        Clear Trading Files
+                      </Button>
+                    </Box>
+
+                    {/* Terminal-style content display */}
+                    <Box sx={{
+                      p: 2,
+                      backgroundColor: '#000000',
+                      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                      fontSize: '0.85rem',
+                      color: '#00ff00',
+                      minHeight: 80,
+                      borderRadius: '0 0 8px 8px'
+                    }}>
+                      {reversalTradingFile?.exists ? (
+                        <Box>
+                          <Box sx={{ color: '#ffffff', mb: 1, fontSize: '0.8rem' }}>
+                            $ cat reversal_list.txt
+                          </Box>
+                          <Box sx={{
+                            color: reversalTradingFile.content.trim() ? '#00ff00' : '#666666',
+                            fontWeight: reversalTradingFile.content.trim() ? 500 : 400
+                          }}>
+                            {reversalTradingFile.content.trim() || '(empty file)'}
+                          </Box>
+                          {reversalTradingFile.last_modified && (
+                            <Box sx={{ color: '#666666', mt: 1, fontSize: '0.7rem' }}>
+                              Last modified: {new Date(reversalTradingFile.last_modified).toLocaleString()}
+                            </Box>
+                          )}
+                        </Box>
+                      ) : (
+                        <Box sx={{ color: '#666666', fontStyle: 'italic' }}>
+                          File not found
+                        </Box>
+                      )}
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
