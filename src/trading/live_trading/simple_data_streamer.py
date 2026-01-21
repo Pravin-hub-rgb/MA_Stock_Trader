@@ -289,6 +289,16 @@ class SimpleStockStreamer:
         print("Attempting to reconnect...")
         return self._connect_with_retries()
 
+    def disconnect(self):
+        """Disconnect from WebSocket"""
+        if self.streamer:
+            try:
+                self.streamer.disconnect()
+                print("WebSocket disconnected")
+            except:
+                pass
+        self.connected = False
+
     def _cleanup_connection(self):
         """Clean up WebSocket connection"""
         if self.streamer:

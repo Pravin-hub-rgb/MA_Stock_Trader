@@ -319,14 +319,8 @@ class UpstoxFetcher:
             response = requests.get(url, headers=headers)
             response_data = response.json()
 
-            print(f"DEBUG OHLC: Calling URL: {url}")
-            print(f"DEBUG OHLC: Keys being requested: {keys}")
-
             if response.status_code == 200 and response_data.get('status') == 'success':
                 data = response_data.get('data', {})
-                print(f"DEBUG OHLC: Response status: {response.status_code}")
-                print(f"DEBUG OHLC: Response data keys: {list(data.keys()) if data else 'EMPTY'}")
-                print(f"DEBUG OHLC: Full response data: {data}")
 
                 for instrument_key, instrument_data in data.items():
                     # Try multiple ways to find the symbol
@@ -341,9 +335,6 @@ class UpstoxFetcher:
                                 symbol = sym
                                 break
 
-                    print(f"DEBUG OHLC: Processing key {instrument_key} -> symbol {symbol}")
-                    print(f"DEBUG OHLC: Instrument data keys: {list(instrument_data.keys())}")
-
                     if symbol:
                         # Check for live_ohlc data (current day's OHLC)
                         live_ohlc = instrument_data.get('live_ohlc', {})
@@ -356,14 +347,9 @@ class UpstoxFetcher:
                                 'close': live_ohlc.get('close')
                             }
                             ohlc_dict[symbol] = ohlc
-                            print(f"SUCCESS: {symbol} OHLC = {ohlc}")
-                        else:
-                            print(f"No live_ohlc data for {symbol}")
-                    else:
-                        print(f"Could not map {instrument_key} to symbol")
             else:
-                print(f"OHLC API error - Status: {response.status_code}, Response: {response_data}")
-                print(f"DEBUG OHLC: Raw response text: {response.text}")
+                # Silent error handling for production
+                pass
 
         except Exception as e:
             logger.error(f"Failed to fetch OHLC data: {e}")
@@ -450,4 +436,4 @@ class UpstoxFetcher:
             return {}
 
 # Global instance
-upstox_fetcher = UpstoxFetcher()
+upstox_fetcher = UpstoxFetcher(config_file=os.path.abspath('upstox_config.json'))

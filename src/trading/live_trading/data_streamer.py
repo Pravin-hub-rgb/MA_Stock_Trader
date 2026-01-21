@@ -49,11 +49,11 @@ class StockDataStreamer:
         self.connected = False
         self.subscription_successful = False
 
-        logger.info(f"📊 Monitoring {len(instrument_keys)} stocks: {list(stock_symbols.values())}")
+        logger.info(f"Monitoring {len(instrument_keys)} stocks: {list(stock_symbols.values())}")
 
     def signal_handler(self, sig, frame):
         """Handle shutdown signals"""
-        logger.info("🛑 Shutting down streamer...")
+        logger.info("Shutting down streamer...")
         self.running = False
         if self.streamer:
             self.streamer.disconnect()
@@ -223,7 +223,7 @@ class StockDataStreamer:
 
     def on_open(self):
         """Called when WebSocket opens"""
-        logger.info("✅ WebSocket connected")
+        logger.info("WebSocket connected")
         self.connected = True
         import time
         time.sleep(2)
@@ -232,19 +232,19 @@ class StockDataStreamer:
         try:
             self.streamer.subscribe(self.instrument_keys, SUBSCRIPTION_MODE)
             self.subscription_successful = True
-            logger.info(f"📡 Subscribed to {len(self.instrument_keys)} instruments")
+            logger.info(f"Subscribed to {len(self.instrument_keys)} instruments")
         except Exception as e:
-            logger.error(f"❌ Subscription error: {e}")
+            logger.error(f"Subscription error: {e}")
             self.running = False
 
     def on_error(self, error):
         """WebSocket error handler"""
-        logger.error(f"❌ WebSocket error: {error}")
+        logger.error(f"WebSocket error: {error}")
         self.connected = False
 
     def on_close(self, *args):
         """WebSocket close handler"""
-        logger.warning("⚠️ WebSocket closed")
+        logger.warning("WebSocket closed")
         self.connected = False
         self.running = False
 
@@ -265,7 +265,7 @@ class StockDataStreamer:
                 self.streamer.on("error", self.on_error)
                 self.streamer.on("close", self.on_close)
 
-                logger.info("🔌 Connecting to market data...")
+                logger.info("Connecting to market data...")
                 self.streamer.connect()
 
                 # Wait for connection and subscription
@@ -275,18 +275,18 @@ class StockDataStreamer:
                     time.sleep(0.5)
 
                 if self.subscription_successful:
-                    logger.info("📡 Live data streaming started")
+                    logger.info("Live data streaming started")
                     return True
                 else:
                     raise Exception("Subscription failed")
 
             except Exception as e:
-                logger.error(f"❌ Connection failed: {e}")
+                logger.error(f"Connection failed: {e}")
                 if attempt < MAX_RETRIES - 1:
                     logger.info(f"🔄 Retrying in {RETRY_DELAY} seconds...")
                     time.sleep(RETRY_DELAY)
                 else:
-                    logger.error("❌ Max retries reached")
+                    logger.error("Max retries reached")
                     return False
 
         return False
@@ -311,4 +311,4 @@ class StockDataStreamer:
         finally:
             self.disconnect()
 
-        return True        return True
+        return True

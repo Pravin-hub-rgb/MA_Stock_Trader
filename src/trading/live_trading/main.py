@@ -28,7 +28,15 @@ from .selection_engine import SelectionEngine
 from .paper_trader import PaperTrader
 from .reversal_monitor import ReversalMonitor
 from .volume_profile import volume_profile_calculator
-from ...utils.upstox_fetcher import UpstoxFetcher
+try:
+    # Try relative import first (when run as part of package)
+    from ...utils.upstox_fetcher import UpstoxFetcher
+except ImportError:
+    # Fallback to absolute import (when run standalone)
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    from utils.upstox_fetcher import UpstoxFetcher
 
 # Setup logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
@@ -40,10 +48,12 @@ IST = pytz.timezone('Asia/Kolkata')
 class LiveTradingOrchestrator:
     """Main orchestrator for live trading operations"""
 
-    def __init__(self, reversal_mode=False):
+    def __init__(self, reversal_mode=False, config_file=None):
         self.reversal_mode = reversal_mode
 
-        self.upstox_fetcher = UpstoxFetcher()
+        # Use the global working fetcher instance (same as continuation bot)
+        from src.utils.upstox_fetcher import upstox_fetcher
+        self.upstox_fetcher = upstox_fetcher
 
         if self.reversal_mode:
             self.reversal_monitor = ReversalMonitor()
@@ -116,13 +126,13 @@ class LiveTradingOrchestrator:
                 ltp_data = self.upstox_fetcher.get_ltp_data(symbol)
                 if ltp_data and 'cp' in ltp_data and ltp_data['cp'] is not None:
                     prev_closes[symbol] = float(ltp_data['cp'])
-                    logger.info(f"✅ {symbol}: Previous close ₹{prev_closes[symbol]:.2f} (from LTP 'cp' field)")
+                    logger.info(f"{symbol}: Previous close ₹{prev_closes[symbol]:.2f} (from LTP 'cp' field)")
                 else:
-                    logger.warning(f"❌ Could not get 'cp' field for {symbol}, LTP data: {ltp_data}")
+                    logger.warning(f"Could not get 'cp' field for {symbol}, LTP data: {ltp_data}")
                     prev_closes[symbol] = 0.0  # Fallback
 
             except Exception as e:
-                logger.error(f"❌ Error getting LTP data for {symbol}: {e}")
+                logger.error(f"Error getting LTP data for {symbol}: {e}")
                 prev_closes[symbol] = 0.0
 
         return prev_closes
@@ -141,17 +151,23 @@ class LiveTradingOrchestrator:
                 # Store previous close for reversal mode
                 self.prev_closes[symbol] = prev_close
 
-                # Get instrument key
-                instrument_key = self.upstox_fetcher.get_instrument_key(symbol)
+                # For reversal mode, extract clean symbol name for API calls
+                if self.reversal_mode:
+                    clean_symbol = symbol.split('-')[0]  # Remove -u/-d suffix
+                else:
+                    clean_symbol = symbol
+
+                # Get instrument key using clean symbol name
+                instrument_key = self.upstox_fetcher.get_instrument_key(clean_symbol)
                 if instrument_key:
                     self.instrument_keys.append(instrument_key)
-                    self.stock_symbols[instrument_key] = symbol
+                    self.stock_symbols[instrument_key] = symbol  # Keep original symbol for tracking
 
                     if not self.reversal_mode:
                         # Add to continuation monitor
                         self.monitor.add_stock(symbol, instrument_key, prev_close)
                 else:
-                    logger.error(f"Could not get instrument key for {symbol}")
+                    logger.error(f"Could not get instrument key for {symbol} (clean: {clean_symbol})")
 
             logger.info(f"Prepared {len(self.instrument_keys)} instruments for subscription")
             return len(self.instrument_keys) > 0
@@ -217,11 +233,27 @@ class LiveTradingOrchestrator:
                 # Set selection method to quality_score
                 self.selection_engine.set_selection_method("quality_score")
             else:
-                # Load reversal watchlist and rank stocks
-                success = self.reversal_monitor.load_watchlist()
+                # Load reversal watchlist and rank stocks - do this in prep phase
+                success = self.reversal_monitor.load_watchlist(REVERSAL_LIST_FILE)
                 if not success:
                     logger.error("Failed to load reversal watchlist")
                     return False
+
+                # Set previous closes for all stocks in watchlist
+                self.reversal_monitor.set_prev_closes(prev_closes)
+
+                # Preload stock scoring metadata for reversal (should be done in prep phase)
+                # For reversal mode, use clean symbol names (remove -u/-d suffixes)
+                clean_symbols = []
+                for symbol in symbols:
+                    # Remove the -u/-d suffix (e.g., "ELECON-u6" -> "ELECON")
+                    clean_symbol = symbol.split('-')[0]
+                    clean_symbols.append(clean_symbol)
+                
+                logger.info("Preloading stock scoring metadata for reversal...")
+                from .stock_scorer import stock_scorer
+                stock_scorer.preload_metadata(clean_symbols)
+                logger.info(f"Stock scoring metadata preloaded for {len(clean_symbols)} reversal stocks")
 
                 # Rank stocks by quality score
                 self.reversal_monitor.rank_stocks_by_quality()
@@ -249,29 +281,41 @@ class LiveTradingOrchestrator:
         """Handle incoming tick data"""
         try:
             if self.reversal_mode:
-                # Handle reversal mode - pass data to reversal monitor
-                prev_close = self.prev_closes.get(symbol, 0.0)
-                market_data = {
-                    symbol: {
-                        'ltp': price,
-                        'open': None,  # Will be updated from OHLC if available
-                        'high': None,
-                        'low': None,
-                        'prev_close': prev_close
-                    }
-                }
+                # Handle reversal mode - use first tick tracking (expert's solution)
+                # Only update tick if stock exists in watchlist (should be preloaded)
+                stock = self.reversal_monitor.find_stock_in_watchlist(symbol)
+                if stock:
+                    # Update tick data (this should not trigger cache loading if done properly)
+                    self.reversal_monitor.update_stock_tick(symbol, price, timestamp)
 
-                # Try to extract opening price from OHLC data if available
-                if ohlc_data:
-                    for candle in ohlc_data:
-                        if isinstance(candle, dict) and candle.get('interval') == 'I1':
-                            market_data[symbol]['open'] = float(candle.get('open', 0))
-                            market_data[symbol]['high'] = float(candle.get('high', 0))
-                            market_data[symbol]['low'] = float(candle.get('low', 0))
-                            break
+                    # Track current low for Strong Start conditions
+                    if price < stock.current_low:
+                        stock.current_low = price
 
-                current_time = datetime.now(IST).time()
-                self.reversal_monitor.execute_market_context_logic(market_data, current_time)
+                    if stock.first_tick_captured:
+                        # Calculate gap if not already done
+                        if not stock.gap_calculated and hasattr(stock, 'prev_close') and stock.prev_close:
+                            self.reversal_monitor.calculate_stock_gap(stock)
+
+                        # Check for OOPS conditions
+                        if stock.gap_calculated and self.reversal_monitor.check_oops_conditions(stock, price):
+                            if self.reversal_monitor.active_positions < self.reversal_monitor.max_positions:
+                                # Execute OOPS trade
+                                stock.triggered = True
+                                stock.entry_price = price
+                                stock.stop_loss = price * 0.96
+                                self.reversal_monitor.active_positions += 1
+                                self.reversal_monitor.log_paper_trade(symbol, "ENTRY", price, "OOPS")
+
+                        # Check for Strong Start conditions
+                        if stock.gap_calculated and self.reversal_monitor.check_strong_start_conditions(stock, stock.current_low):
+                            if self.reversal_monitor.active_positions < self.reversal_monitor.max_positions:
+                                # Execute Strong Start trade
+                                stock.triggered = True
+                                stock.entry_price = price
+                                stock.stop_loss = price * 0.96
+                                self.reversal_monitor.active_positions += 1
+                                self.reversal_monitor.log_paper_trade(symbol, "ENTRY", price, "Strong Start")
             else:
                 # Handle continuation mode
                 self.monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_data)
@@ -303,7 +347,7 @@ class LiveTradingOrchestrator:
             # Log to paper trader
             self.paper_trader.log_entry(stock, price, timestamp)
 
-            logger.info(f"✅ ENTERED: {stock.symbol} at {price:.2f}")
+            logger.info(f"ENTERED: {stock.symbol} at {price:.2f}")
 
         except Exception as e:
             logger.error(f"Error executing entry for {stock.symbol}: {e}")
@@ -317,7 +361,7 @@ class LiveTradingOrchestrator:
             # Log to paper trader
             self.paper_trader.log_exit(stock, price, timestamp, reason)
 
-            logger.info(f"✅ EXITED: {stock.symbol} at {price:.2f} | {reason}")
+            logger.info(f"EXITED: {stock.symbol} at {price:.2f} | {reason}")
 
         except Exception as e:
             logger.error(f"Error executing exit for {stock.symbol}: {e}")
@@ -344,7 +388,40 @@ class LiveTradingOrchestrator:
             if self.reversal_mode:
                 # Reversal mode: Continuous monitoring throughout the day
                 logger.info("Reversal mode: Starting continuous monitoring...")
-                self.data_streamer.run()
+
+                # Start data streaming in a separate thread or process
+                import threading
+                stream_thread = threading.Thread(target=self.data_streamer.run)
+                stream_thread.start()
+
+                # Main trading loop for market context logic
+                while self.trading_active:
+                    current_time = datetime.now(IST).time()
+
+                    # Collect market data for context analysis
+                    market_data = {}
+                    for symbol in self.stock_symbols.values():
+                        try:
+                            # For reversal mode, extract clean symbol name for API calls
+                            if self.reversal_mode:
+                                clean_symbol = symbol.split('-')[0]  # Remove -u/-d suffix
+                            else:
+                                clean_symbol = symbol
+
+                            ltp_data = self.upstox_fetcher.get_ltp_data(clean_symbol)
+                            if ltp_data:
+                                market_data[symbol] = ltp_data  # Keep original symbol as key
+                        except Exception as e:
+                            logger.error(f"Error getting market data for {symbol}: {e}")
+
+                    # Execute market context logic
+                    self.reversal_monitor.execute_market_context_logic(market_data, current_time)
+
+                    # Sleep briefly to avoid CPU overload
+                    time.sleep(1)
+
+                # Wait for stream thread to finish
+                stream_thread.join()
             else:
                 # Continuation mode: 9:19 selection logic
                 # Monitor until end of day or stopped
@@ -383,16 +460,24 @@ class LiveTradingOrchestrator:
         logger.info("Waiting for market open...")
 
         market_open_str = MARKET_OPEN.strftime("%H:%M")
+        current_time_str = self.get_current_time_str()
+        
+        # Check if market is already open
+        if current_time_str >= market_open_str:
+            logger.info(f"Market already open! Current: {current_time_str}, Open: {market_open_str}")
+            return
+
+        # Wait until market opens
         while True:
-            current_time = self.get_current_time_str()
-            if current_time >= market_open_str:
+            current_time_str = self.get_current_time_str()
+            if current_time_str >= market_open_str:
                 logger.info("Market opened!")
                 break
             time.sleep(1)
 
     def apply_vah_filtering(self):
         """Apply VAH filtering: reject stocks that open below previous day's VAH"""
-        logger.info("=== APPLYING SVRO - V (VALUE AREA) FILTERING ===")
+        logger.info("=== APPLYING VALUE AREA FILTERING (SVRO Component) ===")
 
         try:
             rejected_count = 0
@@ -417,8 +502,8 @@ class LiveTradingOrchestrator:
                         # Check VAH condition
                         vah = self.vah_dict.get(stock.symbol)
                         if vah is not None:
-                            vah_status = "✅ VAH OK" if open_price >= vah else "❌ Below VAH"
-                            gap_status = "📈 Gap Up" if gap_pct > 0 else "📉 Gap Down"
+                            vah_status = "VAH OK" if open_price >= vah else "Below VAH"
+                            gap_status = "Gap Up" if gap_pct > 0 else "Gap Down"
 
                             if open_price < vah:
                                 # Reject stock
@@ -439,10 +524,10 @@ class LiveTradingOrchestrator:
                 except Exception as e:
                     logger.error(f"Error applying VAH filter for {stock.symbol}: {e}")
 
-            logger.info(f"SVRO-V filtering complete: {qualified_count} qualified, {rejected_count} rejected")
+            logger.info(f"Value Area filtering complete: {qualified_count} qualified, {rejected_count} rejected")
 
         except Exception as e:
-            logger.error(f"Error in SVRO-V filtering: {e}")
+            logger.error(f"Error in Value Area filtering: {e}")
 
     def prepare_and_select_stocks(self):
         """Prepare entry levels and select stocks to trade"""
@@ -471,7 +556,7 @@ class LiveTradingOrchestrator:
         # Mark selected stocks as ready for entry
         for stock in selected_stocks:
             stock.entry_ready = True
-            logger.info(f"🎯 Ready to trade: {stock.symbol} (Entry: {stock.entry_high:.2f}, SL: {stock.entry_sl:.2f})")
+            logger.info(f"Ready to trade: {stock.symbol} (Entry: {stock.entry_high:.2f}, SL: {stock.entry_sl:.2f})")
 
     def run(self):
         """Main run method with graceful WebSocket cleanup"""
@@ -489,15 +574,17 @@ class LiveTradingOrchestrator:
 
             logger.info("Prep phase successful, proceeding to timing logic...")
 
-            # Wait until prep end time (convert to string comparison like options bot)
-            prep_end_str = PREP_END.strftime("%H:%M")
-            current_time_str = self.get_current_time_str()
-            logger.info(f"Current time: {current_time_str}, Prep end time: {prep_end_str}")
+            # Wait until prep end time
+            current_time = datetime.now(IST).time()
+            prep_end_time = PREP_END
+            
+            logger.info(f"Current time: {current_time.strftime('%H:%M:%S')}, Prep end time: {prep_end_time.strftime('%H:%M:%S')}")
 
-            if current_time_str < prep_end_str:
+            # Compare times properly (not strings)
+            if current_time < prep_end_time:
                 # Calculate seconds until prep end
-                current_seconds = datetime.now(IST).hour * 3600 + datetime.now(IST).minute * 60 + datetime.now(IST).second
-                prep_seconds = PREP_END.hour * 3600 + PREP_END.minute * 60 + PREP_END.second
+                current_seconds = current_time.hour * 3600 + current_time.minute * 60 + current_time.second
+                prep_seconds = prep_end_time.hour * 3600 + prep_end_time.minute * 60 + prep_end_time.second
                 wait_seconds = prep_seconds - current_seconds
 
                 logger.info(f"Calculated wait time: {wait_seconds} seconds")

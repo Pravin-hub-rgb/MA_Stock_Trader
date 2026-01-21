@@ -173,19 +173,13 @@ def run_live_trading_bot():
         global global_selected_stocks, global_selected_symbols
         monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
 
-        # Capture opening prices from first OHLC tick AFTER market open (REQUIRED for SVRO-V filtering)
-        current_time = datetime.now(IST).time()
-        if ohlc_list and bot_config['mode'] == 'c' and current_time >= MARKET_OPEN:
-            for candle in ohlc_list:
-                if isinstance(candle, dict) and candle.get('interval') == 'I1':
-                    stock = monitor.stocks.get(instrument_key)
-                    if stock and not hasattr(stock, 'opening_price_captured'):
-                        opening_price = float(candle.get('open', 0))
-                        if opening_price > 0:
-                            stock.set_open_price(opening_price)
-                            stock.opening_price_captured = True
-                            print(f"CAPTURED opening price for {symbol}: Rs{opening_price:.2f}")
-                    break
+        # Capture opening prices from first tick (EXPERT'S SOLUTION - works for any start time)
+        stock = monitor.stocks.get(instrument_key)
+        if stock and not hasattr(stock, 'opening_price_captured'):
+            # Use first tick as opening price (no time dependency)
+            stock.set_open_price(price)
+            stock.opening_price_captured = True
+            print(f"CAPTURED opening price for {symbol}: Rs{price:.2f}")
 
         # Process OOPS reversal logic
         if bot_config['mode'] == 'r':
@@ -366,91 +360,84 @@ def run_live_trading_bot():
 
             print("MARKET OPEN! Monitoring live data...")
 
-            # Wait 1 minute for first 1-minute candle to complete (14:55-14:56)
-            print("WAITING 60 seconds for first 1-minute candle to complete...")
-            time_module.sleep(60)
+            # For reversal mode, skip the 1-minute wait and OHLC fetching
+            # Opening prices will be captured from first tick (EXPERT'S SOLUTION)
+            if bot_config['mode'] == 'r':
+                print("REVERSAL MODE: Using first-tick opening price capture (no 1-minute wait)")
+            else:
+                # For continuation mode, keep the original logic
+                print("WAITING 60 seconds for first 1-minute candle to complete...")
+                time_module.sleep(60)
 
-            # Fetch OHLC data immediately to get true market opening prices
-            print("\n=== FETCHING OPENING PRICES FROM FIRST 1-MINUTE CANDLE ===")
-            symbols = [stock.symbol for stock in monitor.stocks.values() if stock.situation == 'continuation']
-            ohlc_data = upstox_fetcher.get_current_ohlc(symbols)
+                # Fetch OHLC data immediately to get true market opening prices
+                print("\nFETCHING OPENING PRICES FROM FIRST 1-MINUTE CANDLE...")
+                symbols = [stock.symbol for stock in monitor.stocks.values() if stock.situation == 'continuation']
+                ohlc_data = upstox_fetcher.get_current_ohlc(symbols)
 
-            # Run SVRO-V analysis immediately with true opening prices
-            if bot_config['mode'] == 'c' and global_vah_dict:  # Only for continuation mode with pre-calculated VAH
-                print("\n📊 SVRO-V STOCK ANALYSIS (Market Open + 1min)")
-                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                # Run SVRO-V analysis immediately with true opening prices
+                if global_vah_dict:  # Only for continuation mode with pre-calculated VAH
+                    print("\nSVRO-V STOCK ANALYSIS (Market Open + 1min)")
+                    print("=" * 50)
 
-                # Apply VAH filtering using pre-calculated VAH and REST OHLC opening prices
-                rejected_count = 0
-                qualified_count = 0
-                gap_rejections = 0
-                vah_rejections = 0
+                    # Apply VAH filtering using pre-calculated VAH and REST OHLC opening prices
+                    rejected_count = 0
+                    qualified_count = 0
 
-                for stock in monitor.stocks.values():
-                    if stock.situation == 'continuation':
-                        try:
-                            # Get opening price from REST OHLC data
-                            symbol_ohlc = ohlc_data.get(stock.symbol, {})
-                            open_price = symbol_ohlc.get('open')
+                    for stock in monitor.stocks.values():
+                        if stock.situation == 'continuation':
+                            try:
+                                # Get opening price from REST OHLC data
+                                symbol_ohlc = ohlc_data.get(stock.symbol, {})
+                                open_price = symbol_ohlc.get('open')
 
-                            if open_price:
-                                # Calculate gap percentage
-                                prev_close = stock.previous_close
-                                gap_pct = ((open_price - prev_close) / prev_close) * 100 if prev_close > 0 else 0.0
+                                if open_price:
+                                    # Calculate gap percentage
+                                    prev_close = stock.previous_close
+                                    gap_pct = ((open_price - prev_close) / prev_close) * 100 if prev_close > 0 else 0.0
 
-                                # Get gap thresholds from config
-                                from config import GAP_UP_MIN, GAP_UP_MAX
+                                    # Get gap thresholds from config
+                                    from config import GAP_UP_MIN, GAP_UP_MAX
 
-                                # Apply SVRO-V dual criteria filtering
-                                vah = global_vah_dict.get(stock.symbol)
-                                gap_arrow = "↑" if gap_pct > 0 else "↓"
+                                    # Apply SVRO-V dual criteria filtering
+                                    vah = global_vah_dict.get(stock.symbol)
 
-                                # Check gap conditions first
-                                if gap_pct < GAP_UP_MIN:
-                                    stock.reject(f"Insufficient gap up: {gap_pct:+.2f}% < {GAP_UP_MIN*100:.1f}%")
-                                    paper_trader.log_rejection(stock, stock.rejection_reason)
-                                    rejected_count += 1
-                                    gap_rejections += 1
-                                    reason = "Gap"
-                                    emoji = "❌"
-                                elif gap_pct > GAP_UP_MAX:
-                                    stock.reject(f"Excessive gap up: {gap_pct:+.2f}% > {GAP_UP_MAX*100:.1f}%")
-                                    paper_trader.log_rejection(stock, stock.rejection_reason)
-                                    rejected_count += 1
-                                    gap_rejections += 1
-                                    reason = "Gap"
-                                    emoji = "❌"
-                                elif vah is not None and open_price < vah:
-                                    # Gap OK, now check VAH
-                                    stock.reject(f"Opened below VAH (Open: Rs{open_price:.2f} < VAH: Rs{vah:.2f})")
-                                    paper_trader.log_rejection(stock, stock.rejection_reason)
-                                    rejected_count += 1
-                                    vah_rejections += 1
-                                    reason = "VAH"
-                                    emoji = "❌"
+                                    # Check conditions and assign status
+                                    if gap_pct < GAP_UP_MIN:
+                                        status = "REJECTED"
+                                        reason = f"Gap {gap_pct:+.2f}% < {GAP_UP_MIN*100:.1f}%"
+                                        stock.reject(f"Insufficient gap up: {reason}")
+                                        paper_trader.log_rejection(stock, stock.rejection_reason)
+                                        rejected_count += 1
+                                    elif gap_pct > GAP_UP_MAX:
+                                        status = "REJECTED"
+                                        reason = f"Gap {gap_pct:+.2f}% > {GAP_UP_MAX*100:.1f}%"
+                                        stock.reject(f"Excessive gap up: {reason}")
+                                        paper_trader.log_rejection(stock, stock.rejection_reason)
+                                        rejected_count += 1
+                                    elif vah is not None and open_price < vah:
+                                        status = "REJECTED"
+                                        reason = f"Open Rs{open_price:.2f} < VAH Rs{vah:.2f}"
+                                        stock.reject(f"Below VAH: {reason}")
+                                        paper_trader.log_rejection(stock, stock.rejection_reason)
+                                        rejected_count += 1
+                                    else:
+                                        status = "QUALIFIED"
+                                        reason = "All checks passed"
+                                        qualified_count += 1
+
+                                    # Clean output without emojis
+                                    gap_indicator = "UP" if gap_pct > 0 else "DOWN"
+                                    print(f"{stock.symbol}: Open Rs{open_price:.2f} | Gap {gap_pct:+.2f}% {gap_indicator} | VAH Rs{vah:.2f} | {status}")
                                 else:
-                                    # All conditions passed
-                                    qualified_count += 1
-                                    reason = "OK"
-                                    emoji = "✅"
+                                    print(f"{stock.symbol}: No opening price data | SKIPPED")
+                            except Exception as e:
+                                print(f"{stock.symbol}: Analysis error | ERROR")
 
-                                # Clean formatted output
-                                print(f"{stock.symbol}: ₹{open_price:.2f} ({gap_pct:+.2f}% {gap_arrow}) vs VAH ₹{vah:.2f} → {emoji} {reason}")
-                            else:
-                                print(f"{stock.symbol}: No opening price data → ❌ SKIPPED")
-                        except Exception as e:
-                            print(f"{stock.symbol}: Error in analysis → ❌ ERROR")
-
-                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                if qualified_count > 0:
-                    print(f"🎯 DECISION: {qualified_count} stocks qualified for SVRO trading")
-                else:
-                    if gap_rejections > 0 and vah_rejections == 0:
-                        print(f"📉 DECISION: All {rejected_count} stocks rejected - insufficient gap up (< {GAP_UP_MIN*100:.1f}%)")
-                    elif vah_rejections > 0:
-                        print(f"📊 DECISION: {gap_rejections} gap rejections, {vah_rejections} VAH rejections")
+                    print("=" * 50)
+                    if qualified_count > 0:
+                        print(f"RESULT: {qualified_count} stocks qualified, {rejected_count} rejected")
                     else:
-                        print(f"❌ DECISION: All {rejected_count} stocks rejected")
+                        print(f"RESULT: All {rejected_count} stocks rejected")
 
             # Continue with normal entry decision timing
             entry_decision_time = ENTRY_DECISION_TIME

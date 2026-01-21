@@ -10,7 +10,15 @@ from datetime import datetime, timedelta, date
 from typing import Dict, Optional, List
 import pytz
 
-from ...utils.upstox_fetcher import UpstoxFetcher
+try:
+    # Try relative import first (when run as part of package)
+    from ...utils.upstox_fetcher import UpstoxFetcher
+except ImportError:
+    # Fallback to absolute import (when run standalone)
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    from utils.upstox_fetcher import UpstoxFetcher
 
 logger = logging.getLogger(__name__)
 
