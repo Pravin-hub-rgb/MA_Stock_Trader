@@ -1,115 +1,108 @@
 {
   "stocks": [
     {
-      "symbol": "AVANTEL",
-      "period": 7,
-      "trend": "uptrend",
-      "added_at": "2026-01-20T21:18:04.136499",
+      "symbol": "ARISINFRA",
+      "period": 12,
+      "trend": "downtrend",
+      "added_at": "2026-01-21T20:58:30.146596",
       "added_from": "scan_results"
     },
     {
-      "symbol": "ARISINFRA",
-      "period": 11,
-      "trend": "downtrend",
-      "added_at": "2026-01-20T21:18:04.795640",
+      "symbol": "AVANTEL",
+      "period": 8,
+      "trend": "uptrend",
+      "added_at": "2026-01-21T20:58:42.251086",
       "added_from": "scan_results"
     },
     {
       "symbol": "BALUFORGE",
-      "period": 13,
+      "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-01-20T21:19:04.176627",
+      "added_at": "2026-01-21T20:58:49.008986",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "CUPID",
+      "period": 4,
+      "trend": "uptrend",
+      "added_at": "2026-01-21T20:59:03.186900",
       "added_from": "scan_results"
     },
     {
       "symbol": "DEVYANI",
-      "period": 12,
+      "period": 13,
       "trend": "downtrend",
-      "added_at": "2026-01-20T21:19:40.482345",
+      "added_at": "2026-01-21T20:59:22.631473",
       "added_from": "scan_results"
     },
     {
       "symbol": "ELECON",
-      "period": 8,
+      "period": 9,
       "trend": "uptrend",
-      "added_at": "2026-01-20T21:19:48.423149",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "FEDFINA",
-      "period": 3,
-      "trend": "uptrend",
-      "added_at": "2026-01-20T21:20:12.916897",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "GODREJPROP",
-      "period": 10,
-      "trend": "uptrend",
-      "added_at": "2026-01-20T21:20:23.523158",
+      "added_at": "2026-01-21T20:59:23.324012",
       "added_from": "scan_results"
     },
     {
       "symbol": "JBMA",
-      "period": 8,
-      "trend": "uptrend",
-      "added_at": "2026-01-20T21:20:51.243984",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "PFOCUS",
       "period": 9,
       "trend": "uptrend",
-      "added_at": "2026-01-20T21:21:11.830070",
+      "added_at": "2026-01-21T20:59:39.356684",
       "added_from": "scan_results"
     },
     {
-      "symbol": "RVNL",
+      "symbol": "KIRIINDUS",
+      "period": 14,
+      "trend": "downtrend",
+      "added_at": "2026-01-21T20:59:49.519293",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "NETWEB",
+      "period": 3,
+      "trend": "uptrend",
+      "added_at": "2026-01-21T21:00:11.662911",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PRAKASH",
       "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-01-20T21:21:38.223018",
+      "added_at": "2026-01-21T21:00:21.911912",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "RICOAUTO",
+      "period": 13,
+      "trend": "downtrend",
+      "added_at": "2026-01-21T21:00:35.254994",
       "added_from": "scan_results"
     },
     {
       "symbol": "SHREEJISPG",
-      "period": 9,
+      "period": 10,
       "trend": "uptrend",
-      "added_at": "2026-01-20T21:21:48.566718",
+      "added_at": "2026-01-21T21:00:52.009982",
       "added_from": "scan_results"
     },
     {
       "symbol": "TARC",
-      "period": 8,
+      "period": 9,
       "trend": "uptrend",
-      "added_at": "2026-01-20T21:21:54.238693",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "TARIL",
-      "period": 11,
-      "trend": "uptrend",
-      "added_at": "2026-01-20T21:22:01.528506",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "WALCHANNAG",
-      "period": 12,
-      "trend": "downtrend",
-      "added_at": "2026-01-20T21:22:09.223817",
+      "added_at": "2026-01-21T21:00:58.129013",
       "added_from": "scan_results"
     },
     {
       "symbol": "TEJASNET",
-      "period": 11,
+      "period": 12,
       "trend": "downtrend",
-      "added_at": "2026-01-20T21:22:20.464366",
+      "added_at": "2026-01-21T21:01:13.176656",
       "added_from": "scan_results"
     },
     {
-      "symbol": "YATRA",
+      "symbol": "ZAGGLE",
       "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-01-20T21:22:31.320917",
+      "added_at": "2026-01-21T21:01:26.837310",
       "added_from": "scan_results"
     }
   ]
