@@ -49,3 +49,5 @@ Downloads latest bhavcopy from NSE and integrates missing data into cache. Run a
 
 
 taskkill /f /im python.exe
+
+create a legit test script please not like this terminal stuff please

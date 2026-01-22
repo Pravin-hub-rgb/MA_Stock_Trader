@@ -181,13 +181,16 @@ class LiveTradingOrchestrator:
         logger.info("=== STARTING PREP PHASE ===")
 
         try:
-            # Load candidate stocks
+            # STEP 1: Load candidate stocks
+            logger.info("🔄 [DEBUG] STEP 1: Loading candidate stocks...")
             candidates = self.load_candidate_stocks()
             if not candidates:
-                logger.error("No candidate stocks loaded")
+                logger.error("❌ [DEBUG] STEP 1 FAILED: No candidate stocks loaded")
                 return False
+            logger.info(f"✅ [DEBUG] STEP 1 COMPLETED: Loaded {len(candidates)} candidate stocks")
 
-            # Get previous close prices - extract clean symbols from reversal format
+            # STEP 2: Extract symbols and prepare for API calls
+            logger.info("🔄 STEP 2: Preparing symbols for API calls...")
             symbols = list(candidates.keys())
 
             # For reversal mode, extract clean symbol names (remove -u/-d suffixes)
@@ -200,81 +203,133 @@ class LiveTradingOrchestrator:
                 api_symbols = clean_symbols
             else:
                 api_symbols = symbols
+            logger.info(f"✅ STEP 2 COMPLETED: Prepared {len(api_symbols)} symbols for API calls")
 
+            # STEP 3: Get previous close prices
+            logger.info("🔄 STEP 3: Fetching previous close prices...")
             prev_closes = self.get_previous_closes(api_symbols)
+            logger.info(f"✅ STEP 3 COMPLETED: Got prices for {len(prev_closes)} symbols")
 
-            # For reversal mode, map back to original symbol keys
+            # STEP 4: Map prices back to original symbols (reversal mode)
             if self.reversal_mode:
+                logger.info("🔄 STEP 4: Mapping prices back to original symbols...")
                 symbol_mapping = {symbol.split('-')[0]: symbol for symbol in symbols}
                 mapped_prev_closes = {}
                 for clean_symbol, prev_close in prev_closes.items():
                     original_symbol = symbol_mapping.get(clean_symbol, clean_symbol)
                     mapped_prev_closes[original_symbol] = prev_close
                 prev_closes = mapped_prev_closes
+                logger.info("✅ STEP 4 COMPLETED: Price mapping done")
 
-            # Update candidates with prev closes
+            # STEP 5: Update candidates with prices
+            logger.info("🔄 STEP 5: Updating candidates with prices...")
             candidates.update(prev_closes)
+            logger.info("✅ STEP 5 COMPLETED: Candidates updated")
 
-            # Prepare instruments
+            # STEP 6: Prepare instruments
+            logger.info("🔄 STEP 6: Preparing instruments...")
             if not self.prepare_instruments(candidates):
-                logger.error("Failed to prepare instruments")
+                logger.error("❌ STEP 6 FAILED: Failed to prepare instruments")
                 return False
+            logger.info("✅ STEP 6 COMPLETED: Instruments prepared")
 
             if not self.reversal_mode:
-                # Preload stock scoring metadata for continuation
+                # Continuation mode steps
+                logger.info("🔄 STEP 7 (CONTINUATION): Preloading metadata...")
                 from .stock_scorer import stock_scorer
                 stock_scorer.preload_metadata(symbols)
+                logger.info("✅ STEP 7 COMPLETED: Metadata preloaded")
 
-                # Calculate VAH (Value Area High) from previous day's volume profile
-                logger.info("Calculating VAH from previous day's volume profile...")
+                logger.info("🔄 STEP 8 (CONTINUATION): Calculating VAH...")
                 self.vah_dict = volume_profile_calculator.calculate_vah_for_stocks(symbols)
-                logger.info(f"VAH calculated for {len(self.vah_dict)} stocks")
+                logger.info(f"✅ STEP 8 COMPLETED: VAH calculated for {len(self.vah_dict)} stocks")
 
-                # Set selection method to quality_score
+                logger.info("🔄 STEP 9 (CONTINUATION): Setting selection method...")
                 self.selection_engine.set_selection_method("quality_score")
+                logger.info("✅ STEP 9 COMPLETED: Selection method set")
             else:
-                # Load reversal watchlist and rank stocks - do this in prep phase
+                # Reversal mode steps
+                logger.info("🔄 STEP 7 (REVERSAL): Loading watchlist...")
                 success = self.reversal_monitor.load_watchlist(REVERSAL_LIST_FILE)
                 if not success:
-                    logger.error("Failed to load reversal watchlist")
+                    logger.error("❌ STEP 7 FAILED: Failed to load reversal watchlist")
                     return False
+                logger.info("✅ STEP 7 COMPLETED: Watchlist loaded")
 
-                # Set previous closes for all stocks in watchlist
+                logger.info("🔄 STEP 8 (REVERSAL): Setting previous closes...")
                 self.reversal_monitor.set_prev_closes(prev_closes)
+                logger.info("✅ STEP 8 COMPLETED: Previous closes set")
 
-                # Preload stock scoring metadata for reversal (should be done in prep phase)
-                # For reversal mode, use clean symbol names (remove -u/-d suffixes)
+                # STEP 9: Preload metadata with detailed logging
+                logger.info("🔄 STEP 9 (REVERSAL): Starting metadata loading...")
                 clean_symbols = []
                 for symbol in symbols:
-                    # Remove the -u/-d suffix (e.g., "ELECON-u6" -> "ELECON")
                     clean_symbol = symbol.split('-')[0]
                     clean_symbols.append(clean_symbol)
-                
-                logger.info("Preloading stock scoring metadata for reversal...")
+
+                logger.info(f"🔄 STEP 9a: Preloading metadata for {len(clean_symbols)} symbols...")
                 from .stock_scorer import stock_scorer
-                stock_scorer.preload_metadata(clean_symbols)
-                logger.info(f"Stock scoring metadata preloaded for {len(clean_symbols)} reversal stocks")
 
-                # Rank stocks by quality score
-                self.reversal_monitor.rank_stocks_by_quality()
+                # Use a more robust timeout mechanism with detailed logging
+                import signal
+                from contextlib import contextmanager
 
-            # Initialize data streamer (using simple version for now)
+                @contextmanager
+                def timeout_context(seconds):
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError(f"Metadata loading timed out after {seconds} seconds")
+
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(seconds)
+                    try:
+                        yield
+                    finally:
+                        signal.alarm(0)
+
+                try:
+                    logger.info("🔄 STEP 9b: Entering timeout context...")
+                    with timeout_context(30):  # 30 second timeout
+                        logger.info("🔄 STEP 9c: Calling stock_scorer.preload_metadata()...")
+                        stock_scorer.preload_metadata(clean_symbols)
+                        logger.info(f"✅ STEP 9c COMPLETED: Metadata preloaded for {len(clean_symbols)} symbols")
+
+                        logger.info("🔄 STEP 9d: Ranking stocks by quality...")
+                        self.reversal_monitor.rank_stocks_by_quality()
+                        logger.info("✅ STEP 9d COMPLETED: Stock ranking done")
+
+                    logger.info("✅ STEP 9 COMPLETED: All metadata operations done")
+
+                except TimeoutError:
+                    logger.warning("❌ STEP 9 TIMEOUT: Metadata loading timed out - using default ranking")
+                    # Continue without ranking - stocks will be processed in order
+                except Exception as e:
+                    logger.error(f"❌ STEP 9 ERROR: Metadata loading failed: {e} - using default ranking")
+                    # Continue without ranking
+
+            # STEP 10: Initialize data streamer
+            logger.info("🔄 STEP 10: Initializing data streamer...")
             try:
                 from .simple_data_streamer import SimpleStockStreamer
                 self.data_streamer = SimpleStockStreamer(self.instrument_keys, self.stock_symbols)
                 self.data_streamer.tick_handler = self.handle_tick
+                logger.info("✅ STEP 10 COMPLETED: Simple streamer initialized")
             except ImportError:
-                logger.error("Simple streamer not available, trying complex streamer")
-                from .data_streamer import StockDataStreamer
-                self.data_streamer = StockDataStreamer(self.instrument_keys, self.stock_symbols)
-                self.data_streamer.tick_handler = self.handle_tick
+                logger.warning("⚠️ STEP 10: Simple streamer not available, trying complex streamer")
+                try:
+                    from .data_streamer import StockDataStreamer
+                    self.data_streamer = StockDataStreamer(self.instrument_keys, self.stock_symbols)
+                    self.data_streamer.tick_handler = self.handle_tick
+                    logger.info("✅ STEP 10 COMPLETED: Complex streamer initialized")
+                except Exception as e:
+                    logger.error(f"❌ STEP 10 FAILED: No streamer available: {e}")
+                    return False
 
-            logger.info("=== PREP PHASE COMPLETED ===")
+            logger.info("=== PREP PHASE COMPLETED SUCCESSFULLY ===")
             self.prep_completed = True
             return True
 
         except Exception as e:
-            logger.error(f"Error in prep phase: {e}")
+            logger.error(f"❌ PREP PHASE FAILED: {e}")
             return False
 
     def handle_tick(self, instrument_key: str, symbol: str, price: float, timestamp: datetime, ohlc_data=None):

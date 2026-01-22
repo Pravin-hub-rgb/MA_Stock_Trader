@@ -6,8 +6,8 @@ All trading parameters in one place for easy modification
 from datetime import time
 
 # === MARKET TIMING ===
-MARKET_OPEN = time(20, 48)            # Market open time
-ENTRY_DECISION_TIME = time(20, 52)    # Entry decision time
+MARKET_OPEN = time(20, 57)            # Market open time
+ENTRY_DECISION_TIME = time(20, 59)    # Entry decision time
 
 # Auto-calculated (don't modify)
 from datetime import datetime, timedelta

@@ -368,18 +368,31 @@ const LiveTrading: React.FC = () => {
           setLiveLogs(formattedLogs);
         }
 
-        // Continue polling if bot is still running
+        // Continue polling if bot is still running, otherwise stop after a few more polls
         if (data.is_running) {
-          setTimeout(pollLogs, 1000); // Poll every 1 second
+          setTimeout(pollLogs, 500); // Poll every 500ms while running
+        } else {
+          // Bot stopped, do a few more polls to catch any remaining logs
+          setTimeout(() => {
+            // Final poll to ensure we got all logs
+            fetch('/api/live-trading/logs').then(res => res.json()).then(finalData => {
+              if (finalData.logs) {
+                const finalLogs = finalData.logs.map((log: any) =>
+                  `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`
+                );
+                setLiveLogs(finalLogs);
+              }
+            }).catch(() => {});
+          }, 1000);
         }
       } catch (error) {
-        // Continue polling even on error
-        setTimeout(pollLogs, 2000);
+        // Continue polling even on error, but slow down
+        setTimeout(pollLogs, 1000);
       }
     };
 
-    // Start polling
-    setTimeout(pollLogs, 500);
+    // Start polling immediately (no delay)
+    pollLogs();
   };
 
   const handleStopTrading = async () => {

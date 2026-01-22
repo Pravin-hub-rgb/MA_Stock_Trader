@@ -99,6 +99,14 @@ class StockState:
             if gap_pct < -0.05:
                 self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
                 return False
+        elif self.situation in ['reversal_vip', 'reversal_tertiary']:
+            # For reversal VIP and tertiary - gap down required (-5% to 0%)
+            if gap_pct > 0:
+                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for {self.situation})")
+                return False
+            if gap_pct < -0.05:
+                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
+                return False
         else:
             self.reject(f"Unknown situation: {self.situation}")
             return False
@@ -107,6 +115,22 @@ class StockState:
         gap_type = "up" if gap_pct >= 0 else "down"
         logger.info(f"[{self.symbol}] Gap {gap_type} validated: {gap_pct:.1%} ({self.situation})")
         return True
+
+    def get_candidate_type(self) -> str:
+        """Get candidate type based on gap direction and situation"""
+        if not self.gap_validated or self.open_price is None:
+            return "UNKNOWN"
+        
+        gap_pct = (self.open_price - self.previous_close) / self.previous_close
+        
+        if self.situation in ['continuation', 'reversal_s1']:
+            # Gap up stocks are SS (Strong Start) candidates
+            return "SS" if gap_pct > 0 else "FLAT"
+        elif self.situation in ['reversal_s2', 'reversal_vip', 'reversal_tertiary']:
+            # Gap down stocks are OOPS candidates
+            return "OOPS" if gap_pct < 0 else "FLAT"
+        
+        return "UNKNOWN"
 
     def check_low_violation(self) -> bool:
         """Check if low dropped below 1% of open price"""
@@ -262,7 +286,9 @@ class StockMonitor:
 
         # Log qualified stocks
         if qualified:
-            logger.info(f"QUALIFIED STOCKS ({len(qualified)}):")
+            # Determine system name based on trading situation
+            system_name = "SVRO" if qualified[0].situation == 'continuation' else "SS"
+            logger.info(f"QUALIFIED STOCKS ({len(qualified)}) - {system_name}:")
             for stock in qualified:
                 gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) if stock.open_price and stock.previous_close else 0
                 entry_high = stock.entry_high if stock.entry_high else 0
@@ -270,7 +296,9 @@ class StockMonitor:
                 logger.info(f"   {stock.symbol}: Gap {gap_pct:+.1f}%, Entry: Rs{entry_high:.2f}, SL: Rs{entry_sl:.2f}")
 
         # Log ALL stocks with detailed status (including rejected)
-        logger.info(f"STOCK QUALIFICATION STATUS ({len(self.stocks)} total):")
+        # Determine system name based on first stock's situation
+        system_name = "SVRO" if self.stocks and list(self.stocks.values())[0].situation == 'continuation' else "SS"
+        logger.info(f"STOCK QUALIFICATION STATUS ({len(self.stocks)} total) - {system_name}:")
         for stock in self.stocks.values():
             status_parts = []
 

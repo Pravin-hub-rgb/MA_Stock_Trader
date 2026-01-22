@@ -53,16 +53,46 @@ class StockScorer:
             return self.adr_cache[symbol]
 
         try:
-            # Try to load from bhavcopy data
+            # Try to load from bhavcopy data with timeout protection
             bhavcopy_file = os.path.join('bhavcopy_cache', f'{symbol.lower()}_daily.csv')
             if os.path.exists(bhavcopy_file):
-                df = pd.read_csv(bhavcopy_file, parse_dates=['date'])
-                # Use last 14 trading days
-                recent = df.tail(14)
-                if len(recent) >= 5:
-                    adr = ((recent['high'] - recent['low']) / recent['close']).mean()
-                    self.adr_cache[symbol] = adr
-                    return adr
+                # Check file size - skip suspiciously large files (>50MB)
+                file_size = os.path.getsize(bhavcopy_file)
+                if file_size > 50 * 1024 * 1024:  # 50MB limit
+                    logger.warning(f"Skipping {symbol}: CSV file too large ({file_size} bytes)")
+                    return 0.03
+
+                # Use a timeout for CSV reading to prevent hanging
+                import signal
+                from contextlib import contextmanager
+
+                @contextmanager
+                def timeout_context(seconds):
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError(f"CSV reading timed out after {seconds} seconds")
+
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(seconds)
+                    try:
+                        yield
+                    finally:
+                        signal.alarm(0)
+
+                try:
+                    with timeout_context(10):  # 10 second timeout
+                        df = pd.read_csv(bhavcopy_file, parse_dates=['date'])
+                        # Use last 14 trading days
+                        recent = df.tail(14)
+                        if len(recent) >= 5:
+                            adr = ((recent['high'] - recent['low']) / recent['close']).mean()
+                            self.adr_cache[symbol] = adr
+                            return adr
+                except TimeoutError:
+                    logger.warning(f"Timeout reading CSV for {symbol}, using default ADR")
+                    return 0.03
+                except Exception as e:
+                    logger.debug(f"Error reading CSV for {symbol}: {e}")
+                    return 0.03
 
         except Exception as e:
             logger.debug(f"Could not calculate ADR for {symbol}: {e}")

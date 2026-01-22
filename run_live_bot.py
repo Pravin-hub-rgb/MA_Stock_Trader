@@ -18,7 +18,8 @@ import logging
 sys.path.append('src')
 
 # Configure logging to show detailed VAH calculation info
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
+# Use print statements instead of logging for UI compatibility
+# logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
 
 # Global variables for tick handler
 global_selected_stocks = []
@@ -171,15 +172,26 @@ def run_live_trading_bot():
     # Tick handler
     def tick_handler(instrument_key, symbol, price, timestamp, ohlc_list=None):
         global global_selected_stocks, global_selected_symbols
+        
+        # LOG ACTUAL TICK PRICE AND TIME
+        print(f"TICK {symbol}: Rs{price:.2f} at {timestamp.strftime('%H:%M:%S')}")
+        
         monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
 
         # Capture opening prices from first tick (EXPERT'S SOLUTION - works for any start time)
         stock = monitor.stocks.get(instrument_key)
-        if stock and not hasattr(stock, 'opening_price_captured'):
+        if stock and stock.open_price is None:
             # Use first tick as opening price (no time dependency)
             stock.set_open_price(price)
-            stock.opening_price_captured = True
             print(f"CAPTURED opening price for {symbol}: Rs{price:.2f}")
+            
+            # Immediately validate gap and classify candidate type
+            if stock.validate_gap():
+                candidate_type = stock.get_candidate_type()
+                gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
+                print(f"CANDIDATE {symbol}: {candidate_type} candidate - Gap {gap_pct:+.1f}%")
+            else:
+                print(f"REJECTED {symbol}: {stock.rejection_reason}")
 
         # Process OOPS reversal logic
         if bot_config['mode'] == 'r':
@@ -214,7 +226,8 @@ def run_live_trading_bot():
                     if not sel_stock.entry_ready:
                         sel_stock.entry_ready = True
                         gap_pct = ((sel_stock.open_price-sel_stock.previous_close)/sel_stock.previous_close*100)
-                        print(f"OK {sel_stock.symbol} qualified - Gap: {gap_pct:+.1f}% | Entry: Rs{sel_stock.entry_high:.2f} | SL: Rs{sel_stock.entry_sl:.2f}")
+                        candidate_type = sel_stock.get_candidate_type()
+                        print(f"OK {sel_stock.symbol} qualified as {candidate_type} - Gap: {gap_pct:+.1f}% | Entry: Rs{sel_stock.entry_high:.2f} | SL: Rs{sel_stock.entry_sl:.2f}")
                 break  # Only do this once per tick to avoid spam
 
         # Check entry signals only after entry decision time (only for selected stocks)
@@ -360,84 +373,10 @@ def run_live_trading_bot():
 
             print("MARKET OPEN! Monitoring live data...")
 
-            # For reversal mode, skip the 1-minute wait and OHLC fetching
-            # Opening prices will be captured from first tick (EXPERT'S SOLUTION)
-            if bot_config['mode'] == 'r':
-                print("REVERSAL MODE: Using first-tick opening price capture (no 1-minute wait)")
-            else:
-                # For continuation mode, keep the original logic
-                print("WAITING 60 seconds for first 1-minute candle to complete...")
-                time_module.sleep(60)
-
-                # Fetch OHLC data immediately to get true market opening prices
-                print("\nFETCHING OPENING PRICES FROM FIRST 1-MINUTE CANDLE...")
-                symbols = [stock.symbol for stock in monitor.stocks.values() if stock.situation == 'continuation']
-                ohlc_data = upstox_fetcher.get_current_ohlc(symbols)
-
-                # Run SVRO-V analysis immediately with true opening prices
-                if global_vah_dict:  # Only for continuation mode with pre-calculated VAH
-                    print("\nSVRO-V STOCK ANALYSIS (Market Open + 1min)")
-                    print("=" * 50)
-
-                    # Apply VAH filtering using pre-calculated VAH and REST OHLC opening prices
-                    rejected_count = 0
-                    qualified_count = 0
-
-                    for stock in monitor.stocks.values():
-                        if stock.situation == 'continuation':
-                            try:
-                                # Get opening price from REST OHLC data
-                                symbol_ohlc = ohlc_data.get(stock.symbol, {})
-                                open_price = symbol_ohlc.get('open')
-
-                                if open_price:
-                                    # Calculate gap percentage
-                                    prev_close = stock.previous_close
-                                    gap_pct = ((open_price - prev_close) / prev_close) * 100 if prev_close > 0 else 0.0
-
-                                    # Get gap thresholds from config
-                                    from config import GAP_UP_MIN, GAP_UP_MAX
-
-                                    # Apply SVRO-V dual criteria filtering
-                                    vah = global_vah_dict.get(stock.symbol)
-
-                                    # Check conditions and assign status
-                                    if gap_pct < GAP_UP_MIN:
-                                        status = "REJECTED"
-                                        reason = f"Gap {gap_pct:+.2f}% < {GAP_UP_MIN*100:.1f}%"
-                                        stock.reject(f"Insufficient gap up: {reason}")
-                                        paper_trader.log_rejection(stock, stock.rejection_reason)
-                                        rejected_count += 1
-                                    elif gap_pct > GAP_UP_MAX:
-                                        status = "REJECTED"
-                                        reason = f"Gap {gap_pct:+.2f}% > {GAP_UP_MAX*100:.1f}%"
-                                        stock.reject(f"Excessive gap up: {reason}")
-                                        paper_trader.log_rejection(stock, stock.rejection_reason)
-                                        rejected_count += 1
-                                    elif vah is not None and open_price < vah:
-                                        status = "REJECTED"
-                                        reason = f"Open Rs{open_price:.2f} < VAH Rs{vah:.2f}"
-                                        stock.reject(f"Below VAH: {reason}")
-                                        paper_trader.log_rejection(stock, stock.rejection_reason)
-                                        rejected_count += 1
-                                    else:
-                                        status = "QUALIFIED"
-                                        reason = "All checks passed"
-                                        qualified_count += 1
-
-                                    # Clean output without emojis
-                                    gap_indicator = "UP" if gap_pct > 0 else "DOWN"
-                                    print(f"{stock.symbol}: Open Rs{open_price:.2f} | Gap {gap_pct:+.2f}% {gap_indicator} | VAH Rs{vah:.2f} | {status}")
-                                else:
-                                    print(f"{stock.symbol}: No opening price data | SKIPPED")
-                            except Exception as e:
-                                print(f"{stock.symbol}: Analysis error | ERROR")
-
-                    print("=" * 50)
-                    if qualified_count > 0:
-                        print(f"RESULT: {qualified_count} stocks qualified, {rejected_count} rejected")
-                    else:
-                        print(f"RESULT: All {rejected_count} stocks rejected")
+            # For reversal mode, use first-tick opening price capture
+            # For continuation mode, also use first-tick opening price capture (simplified)
+            print("USING FIRST-TICK OPENING PRICE CAPTURE (Simplified approach)")
+            print("Opening prices will be captured immediately from first ticks")
 
             # Continue with normal entry decision timing
             entry_decision_time = ENTRY_DECISION_TIME
@@ -453,8 +392,8 @@ def run_live_trading_bot():
                     print(f"\nWAITING {wait_seconds:.0f} seconds until entry decision...")
                     time_module.sleep(wait_seconds)
 
-            # SVRO-V analysis already completed above (Market Open + 1min)
-            # Continue with normal entry decision flow
+            # Gap analysis and candidate classification will happen in tick handler
+            # as soon as first ticks are received
 
             # Prepare entries and select stocks
             print("\n=== PREPARING ENTRIES ===")

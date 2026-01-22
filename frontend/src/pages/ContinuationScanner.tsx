@@ -38,6 +38,7 @@ import {
 } from '@mui/icons-material'
 import axios from 'axios'
 import { ScanResult } from '../contexts/AppStateContext'
+import { SCANNER } from '../config/api'
 
 interface ContinuationScannerProps {
   scanResults: ScanResult[]
@@ -126,7 +127,7 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
           max_body_percentage: maxBodySize
         }
       }
-      const response = await axios.post('http://localhost:8000/api/scanner/continuation', scanParams)
+      const response = await axios.post(SCANNER.CONTINUATION, scanParams)
       const opId = response.data.operation_id
       setOperationId(opId)
 
@@ -143,7 +144,7 @@ const ContinuationScanner: React.FC<ContinuationScannerProps> = ({ scanResults, 
   const pollScanStatus = (opId: string) => {
     const pollInterval = setInterval(async () => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/scanner/status/${opId}`)
+        const response = await axios.get(SCANNER.STATUS(opId))
         const status = response.data
 
         setScanProgress(status.progress || 0)

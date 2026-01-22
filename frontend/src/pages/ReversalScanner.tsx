@@ -38,6 +38,7 @@ import {
 import axios from 'axios'
 import ToastNotification from '../components/ToastNotification'
 import { ScanResult } from '../contexts/AppStateContext'
+import { SCANNER } from '../config/api'
 
 interface ReversalScannerProps {
   scanResults: ScanResult[]
@@ -103,7 +104,7 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
           min_decline_percent: minDeclinePercent
         }
       }
-      const response = await axios.post('http://localhost:8000/api/scanner/reversal', scanParams)
+      const response = await axios.post(SCANNER.REVERSAL, scanParams)
       const opId = response.data.operation_id
       setOperationId(opId)
 
@@ -120,7 +121,7 @@ const ReversalScanner: React.FC<ReversalScannerProps> = ({ scanResults, setScanR
   const pollScanStatus = (opId: string) => {
     const pollInterval = setInterval(async () => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/scanner/status/${opId}`)
+        const response = await axios.get(SCANNER.STATUS(opId))
         const status = response.data
 
         setScanProgress(status.progress || 0)

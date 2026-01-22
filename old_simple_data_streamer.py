@@ -25,9 +25,7 @@ class SimpleStockStreamer:
         self.streamer = None
         self.connected = False
         self.running = True
-        self.reconnecting = False
         self.connection_attempts = 0
-        self.max_reconnect_attempts = 5
         self.last_connection_time = None
         self.last_disconnection_time = None
         self.reconnection_reason = None
@@ -76,23 +74,25 @@ class SimpleStockStreamer:
                 ohlc_list = []
 
                 if isinstance(feed_data, dict):
-                    # CRITICAL: Handle marketFF path (missing before)
+                    # Try different possible data structures
+                    ff = None
                     if 'fullFeed' in feed_data:
-                        full_feed = feed_data['fullFeed']
-                        if isinstance(full_feed, dict) and 'marketFF' in full_feed:
-                            market_ff = full_feed['marketFF']
-                            if isinstance(market_ff, dict):
-                                # Extract LTP for reversal first-tick capture
-                                if 'ltpc' in market_ff:
-                                    ltpc_data = market_ff['ltpc']
-                                    if isinstance(ltpc_data, dict):
-                                        ltp = ltpc_data.get('ltp')
-                                
-                                # Extract OHLC for continuation 1-min capture
-                                if 'marketOHLC' in market_ff:
-                                    market_ohlc = market_ff['marketOHLC']
-                                    if isinstance(market_ohlc, dict) and 'ohlc' in market_ohlc:
-                                        ohlc_list = market_ohlc['ohlc']
+                        ff = feed_data['fullFeed']
+                    elif 'ff' in feed_data:  # Alternative structure
+                        ff = feed_data['ff']
+
+                    if ff and isinstance(ff, dict):
+                        # Extract LTPC (LTP data)
+                        if 'ltpc' in ff:
+                            ltpc_data = ff['ltpc']
+                            if isinstance(ltpc_data, dict):
+                                ltp = ltpc_data.get('ltp')
+
+                        # Extract OHLC candles (for opening prices)
+                        if 'marketOHLC' in ff:
+                            market_ohlc = ff['marketOHLC']
+                            if isinstance(market_ohlc, dict) and 'ohlc' in market_ohlc:
+                                ohlc_list = market_ohlc['ohlc']
 
                 if ltp is not None:
                     ltp = float(ltp)
@@ -132,8 +132,6 @@ class SimpleStockStreamer:
         current_time = datetime.now(IST).strftime('%H:%M:%S')
         print(f"WebSocket ERROR at {current_time}: {error}")
         # Don't set connected=False here as connection might still be active
-        if not self.reconnecting:
-            self.reconnect()
 
     def on_close(self, *args):
         """WebSocket closed"""
@@ -143,8 +141,6 @@ class SimpleStockStreamer:
         close_reason = args[1] if len(args) > 1 else "unknown"
         print(f"WebSocket CLOSED at {current_time} - Code: {close_code}, Reason: {close_reason}")
         self.connected = False
-        if not self.reconnecting:
-            self.reconnect()
 
     def connect(self):
         """Connect to WebSocket using Market Data Feed endpoint with auto-redirect"""
@@ -288,37 +284,10 @@ class SimpleStockStreamer:
                     print("Max retries reached - exiting")
                     return False
 
-    def reconnect(self):
-        """Attempt to reconnect with proper exponential backoff"""
-        if self.reconnecting:
-            return
-        
-        self.reconnecting = True
-        attempt = 1
-        
-        while attempt <= self.max_reconnect_attempts and not self.connected:
-            # Proper exponential backoff: 5, 10, 20, 40, 80 seconds
-            wait_time = 5 * (2 ** (attempt - 1))
-            current_time = datetime.now(IST).strftime('%H:%M:%S')
-            print(f"Reconnecting (attempt {attempt}/{self.max_reconnect_attempts}) at {current_time} - waiting {wait_time}s...")
-            
-            import time
-            time.sleep(wait_time)
-            
-            try:
-                if self.connect():
-                    if self.connected:
-                        print(f"Reconnection successful at {datetime.now(IST).strftime('%H:%M:%S')}")
-                        break
-            except Exception as e:
-                print(f"Reconnect attempt {attempt} failed: {e}")
-            
-            attempt += 1
-        
-        self.reconnecting = False
-        
-        if not self.connected:
-            print("Max reconnection attempts reached - stopping")
+    def _reconnect_with_retries(self):
+        """Attempt to reconnect after connection loss"""
+        print("Attempting to reconnect...")
+        return self._connect_with_retries()
 
     def disconnect(self):
         """Disconnect from WebSocket"""

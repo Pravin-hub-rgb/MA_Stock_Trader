@@ -309,35 +309,6 @@ async def validate_trading_lists():
 bot_process = None
 bot_logs = []
 
-# Custom logging handler to capture bot logs for frontend display
-class BotLogHandler(logging.Handler):
-    """Custom logging handler that captures bot logs for frontend display"""
-
-    def __init__(self):
-        super().__init__()
-        self.setLevel(logging.INFO)
-        self.setFormatter(logging.Formatter('%(levelname)s: %(name)s: %(message)s'))
-
-    def emit(self, record):
-        """Called when a log record is emitted - add to bot_logs for frontend"""
-        global bot_logs
-
-        # Format the log message
-        message = self.format(record)
-
-        # Add to bot_logs
-        bot_logs.append({
-            'timestamp': datetime.now().isoformat(),
-            'message': message.strip()
-        })
-
-        # Keep only last 300 logs
-        if len(bot_logs) > 300:
-            bot_logs.pop(0)
-
-# Create global bot log handler instance
-bot_log_handler = BotLogHandler()
-
 @app.post("/api/live-trading/start")
 async def start_live_trading(data: dict, background_tasks: BackgroundTasks):
     """Start the live trading bot as a subprocess"""
@@ -1414,13 +1385,13 @@ def run_bhavcopy_update_background(operation_id: str):
 
 if __name__ == "__main__":
     print("Starting MA Stock Trader API Server...")
-    print("API available at: http://localhost:8001")
-    print("Documentation at: http://localhost:8001/docs")
+    print("API available at: http://localhost:8000")
+    print("Documentation at: http://localhost:8000/docs")
 
     uvicorn.run(
         "server:app",
-        host="127.0.0.1",  # Use localhost instead of 0.0.0.0 for frontend proxy
-        port=8001,  # Use port 8001 to avoid conflicts
-        reload=False,  # Disable reload to prevent import crashes
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
         log_level="info"
     )
