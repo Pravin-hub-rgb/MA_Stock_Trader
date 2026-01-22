@@ -6,8 +6,8 @@ All trading parameters in one place for easy modification
 from datetime import time
 
 # === MARKET TIMING ===
-MARKET_OPEN = time(20, 57)            # Market open time
-ENTRY_DECISION_TIME = time(20, 59)    # Entry decision time
+MARKET_OPEN = time(9, 15)            # Market open time (9:15 AM IST)
+ENTRY_DECISION_TIME = time(9, 19)    # Entry decision time (9:19 AM IST)
 
 # Auto-calculated (don't modify)
 from datetime import datetime, timedelta
@@ -34,6 +34,10 @@ LOW_VIOLATION_PCT = 0.01       # 1% below opening price = reject
 
 # Entry conditions
 ENTRY_SL_PCT = 0.04            # 4% stop loss below entry high
+
+# === REVERSAL API TIMING ===
+API_POLL_DELAY_SECONDS = 5     # Poll Full Market Quote API at MARKET_OPEN + 5 seconds
+API_RETRY_DELAY_SECONDS = 3    # Retry API call after 3 seconds if failed
 
 # === FILE PATHS ===
 # Adjust paths based on current working directory

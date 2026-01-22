@@ -337,11 +337,15 @@ class StockMonitor:
         return qualified
 
     def process_candle_data(self, instrument_key: str, symbol: str, ohlc_list: list):
-        """Process 1-minute candle data to set reliable opening price"""
+        """Process 1-minute candle data to set reliable opening price for continuation mode"""
         if instrument_key not in self.stocks:
             return
 
         stock = self.stocks[instrument_key]
+
+        # Only process OHLC for continuation stocks (pure OHLC approach)
+        if stock.situation != 'continuation':
+            return
 
         # Debug: Log OHLC data received
         if ohlc_list:
@@ -350,26 +354,34 @@ class StockMonitor:
                 if isinstance(candle_data, dict):
                     logger.info(f"[{symbol}] Candle {i}: {candle_data}")
 
-        # Look for 1-minute candles - use the FIRST valid one we receive
+        # Look for 1-minute candle at MARKET_OPEN + 1 minute
         for candle_data in ohlc_list:
             if isinstance(candle_data, dict) and candle_data.get('interval') == 'I1':
                 # Get candle timestamp
                 ts_ms = int(candle_data.get('ts', 0))
                 candle_time = datetime.fromtimestamp(ts_ms / 1000)
 
-                # Debug: Log candle processing
-                open_price = float(candle_data.get('open', 0))
-                logger.info(f"[{symbol}] Processing I1 candle: time={candle_time.strftime('%H:%M:%S')}, open={open_price:.2f}")
+                # Calculate expected OHLC time: MARKET_OPEN + 1 minute
+                from config import MARKET_OPEN
+                expected_ohlc_time = datetime.combine(candle_time.date(), MARKET_OPEN) + timedelta(minutes=1)
 
-                # Use the first valid 1-minute candle we receive for this stock
-                # In live trading, this will be the market open candle
-                if stock.open_price is None and open_price > 0:
-                    stock.set_open_price(open_price)
-                    logger.info(f"[{symbol}] OPEN PRICE SET: {open_price:.2f} (prev close: {stock.previous_close:.2f})")
+                # Check if this candle is within 1 minute of expected time
+                time_diff = abs((candle_time - expected_ohlc_time).total_seconds())
+                if time_diff <= 60:  # Within 1 minute window
+                    # Debug: Log candle processing
+                    open_price = float(candle_data.get('open', 0))
+                    logger.info(f"[{symbol}] Processing I1 candle: time={candle_time.strftime('%H:%M:%S')}, expected={expected_ohlc_time.strftime('%H:%M:%S')}, open={open_price:.2f}")
 
-                    # Validate gap once we have the reliable opening price
-                    stock.validate_gap()
-                    break
+                    # Use this 1-minute candle's open price for continuation stocks
+                    if stock.open_price is None and open_price > 0:
+                        stock.set_open_price(open_price)
+                        logger.info(f"[{symbol}] OPEN PRICE SET from OHLC: {open_price:.2f} (prev close: {stock.previous_close:.2f})")
+
+                        # Validate gap immediately when we get opening price (9:16)
+                        stock.validate_gap()
+                        return True  # Found and processed the correct candle
+
+        return False  # Didn't find the right candle yet
 
     def process_tick(self, instrument_key: str, symbol: str, price: float, timestamp: datetime, ohlc_list: list = None):
         """Process a price tick for a stock"""

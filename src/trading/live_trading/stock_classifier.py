@@ -149,3 +149,34 @@ class StockClassifier:
             'situations': situations,
             'total_stocks': len(symbols)
         }
+
+    def get_continuation_stock_configuration(self) -> Dict:
+        """
+        Get continuation stock configuration
+
+        Returns:
+            Dict: Configuration with symbols and classifications for continuation mode
+        """
+        symbols = self.load_continuation_stocks()
+        situations = {symbol: 'continuation' for symbol in symbols}
+
+        return {
+            'symbols': symbols,
+            'situations': situations,
+            'total_stocks': len(symbols)
+        }
+
+    def get_reversal_stock_configuration(self) -> Dict:
+        """
+        Get reversal stock configuration
+
+        Returns:
+            Dict: Configuration with symbols and classifications for reversal mode
+        """
+        symbols, situations = self.load_reversal_stocks()
+
+        return {
+            'symbols': symbols,
+            'situations': situations,
+            'total_stocks': len(symbols)
+        }
