@@ -1,0 +1,340 @@
+ #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Reversal Stock Monitor - Dedicated monitoring for reversal trading
+Completely separate from continuation logic to avoid contamination
+"""
+
+import sys
+import os
+from datetime import datetime, time, timedelta
+import logging
+from typing import Dict, Optional, List
+
+# Add current directory to path for imports
+sys.path.append(os.path.dirname(__file__))
+
+# Import specific config variables to avoid undefined variable errors
+from config import (
+    MARKET_OPEN,
+    PREP_START,
+    LOW_VIOLATION_PCT,
+    ENTRY_SL_PCT
+)
+
+logger = logging.getLogger(__name__)
+
+
+class ReversalStockState:
+    """Tracks the state of a single stock during reversal trading session"""
+
+    def __init__(self, symbol: str, instrument_key: str, previous_close: float, situation: str = 'reversal_s2'):
+        self.symbol = symbol
+        self.instrument_key = instrument_key
+        self.previous_close = previous_close
+        self.situation = situation  # 'reversal_s1', 'reversal_s2', 'reversal_vip', 'reversal_tertiary'
+
+        # Market data
+        self.open_price: Optional[float] = None
+        self.current_price: Optional[float] = None
+        self.daily_high: float = float('-inf')
+        self.daily_low: float = float('inf')
+        self.last_update: Optional[datetime] = None
+
+        # Status flags
+        self.is_active = True  # Still being monitored
+        self.gap_validated = False
+        self.low_violation_checked = False
+        self.entry_ready = False
+        self.entered = False
+
+        # Reversal-specific flags (OOPS system)
+        self.oops_triggered = False
+        self.strong_start_triggered = False
+
+        # Entry data (set dynamically for reversal)
+        self.entry_high: Optional[float] = None  # High reached after entry time
+        self.entry_sl: Optional[float] = None    # 4% below entry_high
+
+        # Position data (when entered)
+        self.entry_price: Optional[float] = None
+        self.entry_time: Optional[datetime] = None
+        self.exit_price: Optional[float] = None
+        self.exit_time: Optional[datetime] = None
+        self.pnl: Optional[float] = None
+
+        # Rejection reasons
+        self.rejection_reason: Optional[str] = None
+
+    def update_price(self, price: float, timestamp: datetime):
+        """Update price and track high/low"""
+        self.current_price = price
+        self.daily_high = max(self.daily_high, price)
+        self.daily_low = min(self.daily_low, price)
+        self.last_update = timestamp
+
+    def set_open_price(self, price: float):
+        """Set the opening price from API"""
+        self.open_price = price
+        self.daily_high = price
+        self.daily_low = price
+
+    def validate_gap(self) -> bool:
+        """Validate gap based on reversal situation"""
+        if self.open_price is None:
+            return False
+
+        gap_pct = (self.open_price - self.previous_close) / self.previous_close
+
+        if self.situation == 'reversal_s1':
+            # Gap up required (0-5%)
+            if gap_pct < 0:
+                self.reject(f"Gap down: {gap_pct:.1%} (need gap up for {self.situation})")
+                return False
+            if gap_pct > 0.05:
+                self.reject(f"Gap up too high: {gap_pct:.1%} > 5%")
+                return False
+        elif self.situation == 'reversal_s2':
+            # Gap down required (-5% to 0%)
+            if gap_pct > 0:
+                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for {self.situation})")
+                return False
+            if gap_pct < -0.05:
+                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
+                return False
+        elif self.situation in ['reversal_vip', 'reversal_tertiary']:
+            # For reversal VIP and tertiary - gap down required (-5% to 0%)
+            if gap_pct > 0:
+                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for {self.situation})")
+                return False
+            if gap_pct < -0.05:
+                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
+                return False
+        else:
+            self.reject(f"Unknown situation: {self.situation}")
+            return False
+
+        self.gap_validated = True
+        gap_type = "up" if gap_pct >= 0 else "down"
+        logger.info(f"[{self.symbol}] Gap {gap_type} validated: {gap_pct:.1%} ({self.situation})")
+        return True
+
+    def get_candidate_type(self) -> str:
+        """Get candidate type based on gap direction and situation"""
+        if not self.gap_validated or self.open_price is None:
+            return "UNKNOWN"
+        
+        gap_pct = (self.open_price - self.previous_close) / self.previous_close
+        
+        if self.situation == 'reversal_s1':
+            # Gap up stocks are Strong Start candidates
+            return "Strong Start" if gap_pct > 0 else "FLAT"
+        elif self.situation in ['reversal_s2', 'reversal_vip', 'reversal_tertiary']:
+            # Gap down stocks are OOPS candidates
+            return "OOPS" if gap_pct < 0 else "FLAT"
+        
+        return "UNKNOWN"
+
+    def check_low_violation(self) -> bool:
+        """Check if low dropped below 1% of open price"""
+        if self.open_price is None:
+            return False
+
+        threshold = self.open_price * (1 - LOW_VIOLATION_PCT)
+
+        if self.daily_low < threshold:
+            self.reject(f"Low violation: {self.daily_low:.2f} < {threshold:.2f} (1% below open {self.open_price:.2f})")
+            return False
+
+        self.low_violation_checked = True
+        return True
+
+    def prepare_entry(self):
+        """Called when stock is qualified to set entry levels"""
+        if not self.is_active:
+            return
+
+        # Set entry high as the high reached so far
+        self.entry_high = self.daily_high
+
+        # Set stop loss 4% below entry high
+        self.entry_sl = self.entry_high * (1 - ENTRY_SL_PCT)
+
+        self.entry_ready = True
+        logger.info(f"[{self.symbol}] Entry prepared - High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f}")
+
+    def check_entry_signal(self, price: float) -> bool:
+        """Check if price has broken above the entry high"""
+        if not self.entry_ready or self.entry_high is None:
+            return False
+
+        return price >= self.entry_high
+
+    def enter_position(self, price: float, timestamp: datetime):
+        """Enter position at market"""
+        self.entry_price = price
+        self.entry_time = timestamp
+        self.entered = True
+
+        logger.info(f"[{self.symbol}] ENTRY at {price:.2f} (target was {self.entry_high:.2f})")
+
+    def check_exit_signal(self, price: float) -> bool:
+        """Check if stop loss hit"""
+        if not self.entered or self.entry_sl is None:
+            return False
+
+        return price <= self.entry_sl
+
+    def exit_position(self, price: float, timestamp: datetime, reason: str):
+        """Exit position"""
+        self.exit_price = price
+        self.exit_time = timestamp
+
+        # Calculate P&L
+        if self.entry_price:
+            self.pnl = (price - self.entry_price) / self.entry_price * 100
+
+        logger.info(f"[{self.symbol}] EXIT at {price:.2f} | P&L: {self.pnl:.2f}% | Reason: {reason}")
+
+    def reject(self, reason: str):
+        """Mark stock as rejected"""
+        self.is_active = False
+        self.rejection_reason = reason
+        logger.info(f"[{self.symbol}] REJECTED: {reason}")
+
+    def get_status(self) -> Dict:
+        """Get current status for logging"""
+        return {
+            'symbol': self.symbol,
+            'situation': self.situation,
+            'is_active': self.is_active,
+            'open_price': self.open_price,
+            'current_price': self.current_price,
+            'daily_high': self.daily_high,
+            'daily_low': self.daily_low,
+            'gap_validated': self.gap_validated,
+            'entry_ready': self.entry_ready,
+            'entry_high': self.entry_high,
+            'entry_sl': self.entry_sl,
+            'entered': self.entered,
+            'entry_price': self.entry_price,
+            'exit_price': self.exit_price,
+            'pnl': self.pnl,
+            'rejection_reason': self.rejection_reason
+        }
+
+
+class ReversalStockMonitor:
+    """Manages monitoring of multiple stocks for reversal trading"""
+
+    def __init__(self):
+        self.stocks: Dict[str, ReversalStockState] = {}  # instrument_key -> ReversalStockState
+        self.session_start_time = None
+
+    def add_stock(self, symbol: str, instrument_key: str, previous_close: float, situation: str = 'reversal_s2'):
+        """Add a stock to monitor for reversal trading"""
+        if instrument_key in self.stocks:
+            logger.warning(f"Stock {symbol} already being monitored")
+            return
+
+        self.stocks[instrument_key] = ReversalStockState(symbol, instrument_key, previous_close, situation)
+        logger.info(f"Added {symbol} ({situation}) to reversal monitor (prev close: {previous_close:.2f})")
+
+    def remove_stock(self, instrument_key: str):
+        """Remove a stock from monitoring"""
+        if instrument_key in self.stocks:
+            symbol = self.stocks[instrument_key].symbol
+            del self.stocks[instrument_key]
+            logger.info(f"Removed {symbol} from reversal monitor")
+
+    def get_active_stocks(self) -> List[ReversalStockState]:
+        """Get list of currently active stocks"""
+        return [stock for stock in self.stocks.values() if stock.is_active]
+
+    def get_qualified_stocks(self) -> List[ReversalStockState]:
+        """Get stocks that passed gap and low violation checks"""
+        qualified = []
+        rejected = []
+
+        for stock in self.stocks.values():
+            # For reversals: only gap and low violation required
+            if stock.is_active and stock.gap_validated and stock.low_violation_checked:
+                qualified.append(stock)
+            else:
+                rejected.append(stock)
+
+        # Log qualified stocks (clean output for reversal)
+        if qualified:
+            logger.info(f"QUALIFIED REVERSAL STOCKS ({len(qualified)}):")
+            for stock in qualified:
+                gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) if stock.open_price and stock.previous_close else 0
+                candidate_type = stock.get_candidate_type()
+                logger.info(f"   {stock.symbol}: {candidate_type} - Gap: {gap_pct:+.1f}%")
+
+        # Clean status display for reversal (no detailed logging)
+        logger.info(f"REVERSAL STOCK STATUS ({len(self.stocks)} total):")
+        for stock in self.stocks.values():
+            if stock.open_price is None:
+                logger.info(f"   {stock.symbol}: Waiting for opening price")
+            else:
+                gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close * 100) if stock.previous_close else 0
+                status = "QUALIFIED" if (stock.gap_validated and stock.low_violation_checked) else "PENDING"
+                logger.info(f"   {stock.symbol}: {status} - Open: Rs{stock.open_price:.2f} ({gap_pct:+.1f}%)")
+
+        logger.info(f"SUMMARY: {len(qualified)} qualified, {len(rejected)} rejected")
+        return qualified
+
+    def process_tick(self, instrument_key: str, symbol: str, price: float, timestamp: datetime, ohlc_list: list = None):
+        """Process a price tick for a stock"""
+        if instrument_key not in self.stocks:
+            return
+
+        stock = self.stocks[instrument_key]
+
+        # Update price tracking (for high/low and current price)
+        stock.update_price(price, timestamp)
+
+        # Set session start if this is the first tick
+        if self.session_start_time is None:
+            self.session_start_time = timestamp
+
+    def check_violations(self):
+        """Check for low violations for opened stocks that haven't been checked yet"""
+        for stock in self.get_active_stocks():
+            if stock.gap_validated and not stock.low_violation_checked and stock.open_price:
+                stock.check_low_violation()
+
+    def prepare_entries(self):
+        """Called when stocks are qualified to prepare entry levels"""
+        for stock in self.get_qualified_stocks():
+            stock.prepare_entry()
+
+    def check_entry_signals(self) -> List[ReversalStockState]:
+        """Check for entry signals on all qualified stocks"""
+        entry_signals = []
+
+        for stock in self.get_qualified_stocks():
+            if stock.entry_ready and not stock.entered and stock.check_entry_signal(stock.current_price):
+                entry_signals.append(stock)
+
+        return entry_signals
+
+    def check_exit_signals(self) -> List[ReversalStockState]:
+        """Check for exit signals on entered positions"""
+        exit_signals = []
+
+        for stock in self.stocks.values():
+            if stock.entered and stock.check_exit_signal(stock.current_price):
+                exit_signals.append(stock)
+
+        return exit_signals
+
+    def get_summary(self) -> Dict:
+        """Get summary of all stocks"""
+        return {
+            'total_stocks': len(self.stocks),
+            'active_stocks': len(self.get_active_stocks()),
+            'qualified_stocks': len(self.get_qualified_stocks()),
+            'entered_positions': len([s for s in self.stocks.values() if s.entered]),
+            'stock_details': {k: v.get_status() for k, v in self.stocks.items()}
+        }

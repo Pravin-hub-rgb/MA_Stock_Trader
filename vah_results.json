@@ -1,13 +1,10 @@
 {
-  "timestamp": "2026-01-23T14:54:21.868240",
-  "mode": "continuation",
+  "timestamp": "2026-01-23T21:04:53.797108",
+  "mode": "test",
   "results": {
-    "BLISSGVS": 156.95,
-    "CUPID": 402.63,
-    "GRAPHITE": 636.97,
-    "JAINREC": 389.03,
-    "JWL": 315.93,
-    "KROSS": 203.08
+    "RELIANCE": 2450.5,
+    "TCS": 3200.75,
+    "INFY": 1650.25
   },
-  "summary": "6 stocks calculated"
+  "summary": "3 stocks calculated"
 }
