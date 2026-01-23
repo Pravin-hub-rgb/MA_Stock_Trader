@@ -291,7 +291,7 @@ class UpstoxFetcher:
     def get_current_ohlc(self, symbols: List[str]) -> Dict[str, Dict]:
         """
         Get current OHLC data for multiple symbols using REST API
-        Reliable alternative to WebSocket OHLC for opening prices
+        Uses interval=1d for session data (opening price at 9:15 AM)
         """
         ohlc_dict = {}
 
@@ -309,8 +309,8 @@ class UpstoxFetcher:
                 logger.warning("No valid instrument keys found")
                 return ohlc_dict
 
-            # Batch request for multiple instruments (use I1 for 1-minute candles)
-            url = f"https://api.upstox.com/v3/market-quote/ohlc?instrument_key={','.join(keys)}&interval=I1"
+            # Batch request for multiple instruments (use 1d for session data)
+            url = f"https://api.upstox.com/v3/market-quote/ohlc?instrument_key={','.join(keys)}&interval=1d"
             headers = {
                 "Accept": "application/json",
                 "Authorization": f"Bearer {self.access_token}"
@@ -339,12 +339,12 @@ class UpstoxFetcher:
                         # Check for live_ohlc data (current day's OHLC)
                         live_ohlc = instrument_data.get('live_ohlc', {})
                         if live_ohlc and 'open' in live_ohlc:
-                            # Use live OHLC data
+                            # Use live OHLC data with session opening price
                             ohlc = {
-                                'open': live_ohlc.get('open'),
+                                'open': live_ohlc.get('open'),    # Today's opening price at 9:15 AM
                                 'high': live_ohlc.get('high'),
                                 'low': live_ohlc.get('low'),
-                                'close': live_ohlc.get('close')
+                                'close': live_ohlc.get('close')   # Current LTP
                             }
                             ohlc_dict[symbol] = ohlc
             else:

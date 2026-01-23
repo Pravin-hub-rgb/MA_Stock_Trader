@@ -26,11 +26,11 @@ class StockScorer:
         """Load cached scores if available"""
         try:
             if os.path.exists(self.cache_file):
-                with open(self.cache_file, 'r') as f:
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.scores_cache = data.get('scores', {})
                     self.adr_cache = data.get('adr', {})
-                logger.info("✅ Loaded stock scores from cache")
+                logger.info("Loaded stock scores from cache")
         except Exception as e:
             logger.warning(f"Could not load scores cache: {e}")
 
@@ -80,7 +80,7 @@ class StockScorer:
 
                 try:
                     with timeout_context(10):  # 10 second timeout
-                        df = pd.read_csv(bhavcopy_file, parse_dates=['date'])
+                        df = pd.read_csv(bhavcopy_file, parse_dates=['date'], encoding='utf-8')
                         # Use last 14 trading days
                         recent = df.tail(14)
                         if len(recent) >= 5:
@@ -193,7 +193,7 @@ class StockScorer:
 
     def preload_metadata(self, symbols: List[str], prev_closes: Dict[str, float]):
         """Preload metadata for faster scoring"""
-        logger.info(f"📊 Preloading metadata for {len(symbols)} stocks...")
+        logger.info(f"Preloading metadata for {len(symbols)} stocks...")
 
         # Calculate ADR for all symbols
         for symbol in symbols:
@@ -202,7 +202,7 @@ class StockScorer:
         # Save cache
         self._save_cache()
 
-        logger.info("✅ Stock metadata preloaded")
+        logger.info("Stock metadata preloaded")
 
 # Global instance
 stock_scorer = StockScorer()

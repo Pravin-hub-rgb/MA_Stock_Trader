@@ -12,7 +12,7 @@ from typing import Dict, Optional, List
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(__file__))
 from config import *
-from stock_monitor import StockState
+from continuation_stock_monitor import StockState
 
 logger = logging.getLogger(__name__)
 

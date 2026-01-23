@@ -82,7 +82,7 @@ def run_continuation_bot():
     # Import components directly
     sys.path.append('src/trading/live_trading')
 
-    from src.trading.live_trading.stock_monitor import StockMonitor
+    from src.trading.live_trading.continuation_stock_monitor import StockMonitor
     from src.trading.live_trading.rule_engine import RuleEngine
     from src.trading.live_trading.selection_engine import SelectionEngine
     from src.trading.live_trading.paper_trader import PaperTrader
@@ -90,7 +90,7 @@ def run_continuation_bot():
 
     from src.trading.live_trading.volume_profile import volume_profile_calculator
     from src.utils.upstox_fetcher import UpstoxFetcher
-    from config import MARKET_OPEN, ENTRY_DECISION_TIME
+    from src.trading.live_trading.config import MARKET_OPEN, ENTRY_TIME
 
     # Create components
     upstox_fetcher = UpstoxFetcher()
@@ -173,7 +173,7 @@ def run_continuation_bot():
 
         # Check entry signals only after entry decision time (9:19)
         current_time = datetime.now(IST).time()
-        if current_time >= ENTRY_DECISION_TIME and global_selected_stocks:
+        if current_time >= ENTRY_TIME and 'global_selected_stocks' in globals() and global_selected_stocks:
             entry_signals = monitor.check_entry_signals()
 
             for stock in entry_signals:
@@ -183,7 +183,7 @@ def run_continuation_bot():
                     paper_trader.log_entry(stock, price, timestamp)
 
         # Check exit signals for entered positions
-        if current_time >= ENTRY_DECISION_TIME:
+        if current_time >= ENTRY_TIME:
             # Check for trailing stop adjustments (5% profit -> move SL to entry)
             for stock in monitor.stocks.values():
                 if stock.entered and stock.entry_price and stock.current_price:
@@ -203,10 +203,12 @@ def run_continuation_bot():
                 stock.exit_position(price, timestamp, "Stop Loss Hit")
                 paper_trader.log_exit(stock, price, timestamp, "Stop Loss Hit")
 
-    # Set the continuation tick handler
-    data_streamer.tick_handler = tick_handler_continuation
+    # Initialize global variables for tick handler
     global_selected_stocks = []
     global_selected_symbols = set()
+    
+    # Set the continuation tick handler
+    data_streamer.tick_handler = tick_handler_continuation
 
     print("\n=== CONTINUATION BOT INITIALIZED ===")
     print("Using pure OHLC processing - no tick-based opening prices")
@@ -301,7 +303,7 @@ def run_continuation_bot():
             print("Gap validation at 9:16, final qualification at 9:19")
 
             # Continue with normal entry decision timing
-            entry_decision_time = ENTRY_DECISION_TIME
+            entry_decision_time = ENTRY_TIME
             current_time = datetime.now(IST).time()
 
             if current_time < entry_decision_time:

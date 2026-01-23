@@ -6,14 +6,20 @@ Supports both continuation and reversal trading situations
 
 import sys
 import os
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 from typing import Dict, Optional, List
-import random
 
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(__file__))
-from config import *
+
+# Import specific config variables to avoid undefined variable errors
+from config import (
+    MARKET_OPEN,
+    PREP_START,
+    LOW_VIOLATION_PCT,
+    ENTRY_SL_PCT
+)
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +389,7 @@ class StockMonitor:
 
         return False  # Didn't find the right candle yet
 
+
     def process_tick(self, instrument_key: str, symbol: str, price: float, timestamp: datetime, ohlc_list: list = None):
         """Process a price tick for a stock"""
         if instrument_key not in self.stocks:
@@ -436,9 +443,9 @@ class StockMonitor:
 
         stock = self.stocks[instrument_key]
 
-        # Only accumulate during monitoring window
+        # Only accumulate during monitoring window (MARKET_OPEN to ENTRY_TIME)
         current_time = datetime.now().time()
-        if MARKET_OPEN <= current_time <= ENTRY_DECISION_TIME:
+        if MARKET_OPEN <= current_time <= ENTRY_TIME:
             stock.early_volume += volume
 
     def prepare_entries(self):
@@ -465,80 +472,6 @@ class StockMonitor:
                 exit_signals.append(stock)
 
         return exit_signals
-
-    def simulate_opening_prices(self):
-        """Simulate opening prices for test mode"""
-        if not TEST_MODE or not SIMULATE_OPENING_PRICES:
-            return
-
-        logger.info("TEST MODE: Simulating opening prices for all stocks")
-
-        for stock in self.stocks.values():
-            # Generate realistic opening prices based on previous close
-            # Create some with gaps (0-5%), some without
-            gap_pct = random.uniform(-0.02, 0.08)  # -2% to +8% gap
-            open_price = stock.previous_close * (1 + gap_pct)
-
-            # Ensure reasonable price range
-            open_price = max(open_price, stock.previous_close * 0.95)  # Min 5% below
-            open_price = min(open_price, stock.previous_close * 1.10)  # Max 10% above
-
-            stock.set_open_price(open_price)
-            stock.validate_gap()
-
-            logger.info(f"TEST: {stock.symbol}: Simulated open Rs{open_price:.2f} (gap: {gap_pct:+.1%})")
-
-    def generate_test_ticks(self):
-        """Generate fake tick data for testing qualification logic"""
-        if not TEST_MODE:
-            return
-
-        logger.info("TEST MODE: Generating simulated tick data")
-
-        # Generate some ticks for each stock to simulate market activity
-        for instrument_key, stock in self.stocks.items():
-            if stock.open_price:
-                # Generate a few random ticks around the opening price
-                base_price = stock.open_price
-                for i in range(3):
-                    # Small random movement
-                    change = random.uniform(-0.005, 0.005)  # -0.5% to +0.5%
-                    tick_price = base_price * (1 + change)
-
-                    # Simulate timestamp
-                    timestamp = datetime.now()
-
-                    # Process the simulated tick
-                    self.process_tick(instrument_key, stock.symbol, tick_price, timestamp)
-
-                    logger.debug(f"TEST: {stock.symbol}: Simulated tick Rs{tick_price:.2f}")
-
-    def run_test_sequence(self):
-        """Run complete test sequence for qualification testing"""
-        if not TEST_MODE:
-            return
-
-        logger.info("TEST MODE: Running qualification test sequence")
-
-        # Step 1: Simulate market open
-        self.simulate_opening_prices()
-
-        # Step 2: Generate some activity
-        self.generate_test_ticks()
-
-        # Step 3: Check violations (simulate confirmation window)
-        import time
-        time.sleep(1)  # Brief pause
-
-        # Simulate being in confirmation window
-        for stock in self.get_active_stocks():
-            if stock.gap_validated and not stock.low_violation_checked:
-                stock.check_low_violation()
-
-        # Step 4: Prepare entries
-        self.prepare_entries()
-
-        logger.info("TEST MODE: Qualification sequence complete")
 
     def get_summary(self) -> Dict:
         """Get summary of all stocks"""

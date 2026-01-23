@@ -21,9 +21,8 @@ class ReversalStock:
         self.entry_price = None
         self.stop_loss = None
         
-        # First tick tracking for opening price
-        self.open_price = None
-        self.first_tick_captured = False
+        # API-based opening prices only - NO TICK-BASED CAPTURE
+        self.open_price = None  # Set via API only
         self.current_low = float('inf')
         self.gap_calculated = False
 
@@ -60,7 +59,7 @@ class ReversalMonitor:
                 print(f"Reversal list not found: {reversal_list_path}")
                 return False
 
-            with open(reversal_list_path, 'r') as f:
+            with open(reversal_list_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
 
             if not content:
@@ -111,16 +110,16 @@ class ReversalMonitor:
                 # Classify by priority
                 if days >= 7:
                     self.vip_stocks.append(stock)
-                    print(f"✓ VIP Stock: {symbol}-{trend}{days} (7+ days, any trend)")
+                    print(f"VIP Stock: {symbol}-{trend}{days} (7+ days, any trend)")
                 elif days >= 3:
                     if trend == 'd':
                         self.secondary_stocks.append(stock)
-                        print(f"✓ Secondary Stock: {symbol}-{trend}{days} (3-6 days, downtrend)")
+                        print(f"Secondary Stock: {symbol}-{trend}{days} (3-6 days, downtrend)")
                     else:  # trend == 'u'
                         self.tertiary_stocks.append(stock)
-                        print(f"✓ Tertiary Stock: {symbol}-{trend}{days} (3-6 days, uptrend)")
+                        print(f"Tertiary Stock: {symbol}-{trend}{days} (3-6 days, uptrend)")
                 else:
-                    print(f"⚠ Skipping {symbol}: Only {days} days (minimum 3)")
+                    print(f"Skipping {symbol}: Only {days} days (minimum 3)")
 
             total_stocks = len(self.vip_stocks) + len(self.secondary_stocks) + len(self.tertiary_stocks)
             print(f"Loaded {total_stocks} reversal stocks: {len(self.vip_stocks)} VIP, {len(self.secondary_stocks)} secondary, {len(self.tertiary_stocks)} tertiary")
@@ -147,27 +146,35 @@ class ReversalMonitor:
                 else:
                     print(f"⚠ No prev_close found for {stock.symbol}")
 
-    def update_stock_tick(self, symbol: str, price: float, timestamp: datetime):
+
+    def get_opening_price_from_api(self, symbol: str) -> Optional[float]:
         """
-        Update stock with first tick as opening price and track gap analysis
+        Get opening price from Upstox OHLC API with interval=1d for session data
         
         Args:
             symbol: Stock symbol
-            price: Current price (first tick)
-            timestamp: Timestamp of the tick
-        """
-        stock = self.find_stock_in_watchlist(symbol)
-        if not stock:
-            return
-
-        # Track first tick as opening price (expert's solution)
-        if not stock.first_tick_captured:
-            stock.open_price = price
-            stock.first_tick_captured = True
-            print(f"✅ {symbol}: Captured first tick as open = ₹{price:.2f} (bot start time)")
             
-            # Note: Gap calculation will be done when prev_close is available
-            # This happens during prep phase when previous closes are loaded
+        Returns:
+            float: Opening price or None if not available
+        """
+        try:
+            # Import Upstox fetcher
+            from src.utils.upstox_fetcher import upstox_fetcher
+            
+            # Get OHLC data with interval=1d for session data
+            ohlc_data = upstox_fetcher.get_current_ohlc([symbol])
+            
+            if symbol in ohlc_data and 'open' in ohlc_data[symbol]:
+                opening_price = ohlc_data[symbol]['open']
+                print(f"{symbol}: API opening price = ₹{opening_price:.2f}")
+                return opening_price
+            else:
+                print(f"{symbol}: No opening price from API")
+                return None
+                
+        except Exception as e:
+            print(f"Error getting opening price from API for {symbol}: {e}")
+            return None
 
     def calculate_stock_gap(self, stock: ReversalStock):
         """Calculate gap percentage for a stock"""
@@ -176,7 +183,7 @@ class ReversalMonitor:
 
         gap_pct = ((stock.open_price - stock.prev_close) / stock.prev_close) * 100
         stock.gap_calculated = True
-        print(f"📊 {stock.symbol}: Gap % = {gap_pct:.2f}% (Open: ₹{stock.open_price:.2f}, Prev Close: ₹{stock.prev_close:.2f})")
+        print(f"{stock.symbol}: Gap % = {gap_pct:.2f}% (Open: ₹{stock.open_price:.2f}, Prev Close: ₹{stock.prev_close:.2f})")
         return gap_pct
 
     def check_oops_conditions(self, stock: ReversalStock, current_price: float) -> bool:
@@ -188,7 +195,7 @@ class ReversalMonitor:
         crosses_prev_close = current_price > stock.prev_close
         
         if gap_pct <= -2.0 and crosses_prev_close:
-            print(f"🎯 {stock.symbol}: OOPS conditions met! Gap: {gap_pct:.2f}%, Crossed Prev Close: ₹{current_price:.2f}")
+            print(f"{stock.symbol}: OOPS conditions met! Gap: {gap_pct:.2f}%, Crossed Prev Close: ₹{current_price:.2f}")
             return True
         return False
 
@@ -204,7 +211,7 @@ class ReversalMonitor:
         open_equals_low = abs(stock.open_price - current_low) / stock.open_price <= 0.01
         
         if gap_pct >= (STRONG_START_GAP_PCT * 100) and open_equals_low:
-            print(f"🚀 {stock.symbol}: Strong Start conditions met! Gap: {gap_pct:.2f}%, Open≈Low: ₹{current_low:.2f}")
+            print(f"{stock.symbol}: Strong Start conditions met! Gap: {gap_pct:.2f}%, Open≈Low: ₹{current_low:.2f}")
             return True
         return False
 
@@ -362,7 +369,7 @@ class ReversalMonitor:
                 # If we don't have an opening price for this symbol yet, use current LTP as opening price
                 if symbol not in self.opening_prices and 'ltp' in data:
                     self.opening_prices[symbol] = data['ltp']
-                    print(f"✅ Tracked opening price for {symbol}: ₹{data['ltp']:.2f}")
+            print(f"Tracked opening price for {symbol}: ₹{data['ltp']:.2f}")
 
     def execute_market_context_logic(self, market_data: Dict[str, Any], current_time: time, oops_candidates=None, strong_start_candidates=None) -> None:
         """
@@ -425,7 +432,7 @@ class ReversalMonitor:
                 print(f"GAP DOWN DAY: {oops_count} OOPS candidates - Executing OOPS only")
             elif oops_count == 1:
                 # MIXED DAY: Execute OOPS + fill remaining slot with Strong Start
-                print(f"🔄 MIXED DAY: 1 OOPS candidate - Executing OOPS + Strong Start")
+                print(f"MIXED DAY: 1 OOPS candidate - Executing OOPS + Strong Start")
             else:
                 # GAP UP STRENGTH DAY: Execute only Strong Start
                 print(f"GAP UP DAY: 0 OOPS candidates - Executing Strong Start only")
@@ -491,11 +498,11 @@ class ReversalMonitor:
                 prev_close = data.get('prev_close')
                 current_low = data.get('low')
 
-                # Check time window for Strong Start (until entry decision time)
-                from .config import MARKET_OPEN, ENTRY_DECISION_TIME
+                # Check time window for Strong Start (until entry time)
+                from .config import MARKET_OPEN, ENTRY_TIME
                 market_open = MARKET_OPEN
-                five_min_later = ENTRY_DECISION_TIME
-                if market_open <= current_time <= five_min_later:
+                entry_time = ENTRY_TIME
+                if market_open <= current_time <= entry_time:
                     if self.check_strong_start_trigger(symbol, open_price, prev_close, current_low):
                         triggered_stocks.append({
                             'stock': stock,
@@ -506,13 +513,13 @@ class ReversalMonitor:
 
     def _execute_strong_start_only(self, strong_start_candidates, market_data, current_time, triggered_stocks):
         """Execute only Strong Start triggers (gap up strength day)"""
-        # Check time window for Strong Start (until entry decision time)
-        from .config import MARKET_OPEN, ENTRY_DECISION_TIME
+        # Check time window for Strong Start (until entry time)
+        from .config import MARKET_OPEN, ENTRY_TIME
         market_open = MARKET_OPEN
-        five_min_later = ENTRY_DECISION_TIME
+        entry_time = ENTRY_TIME
 
-        if not (market_open <= current_time <= five_min_later):
-            return  # Strong Start only in first 5 min
+        if not (market_open <= current_time <= entry_time):
+            return  # Strong Start only in confirmation window
 
         # Sort by quality rank and execute
         strong_start_candidates_sorted = sorted(strong_start_candidates, key=lambda x: getattr(x, 'quality_rank', 999))
@@ -592,6 +599,6 @@ class ReversalMonitor:
                     else:
                         print(f"{symbol}: Strong Start rejected - only at ₹{current_price:.2f} (needs ₹{required_target:.2f} for >1% move)")
                 else:
-                    print(f"⚠️ {symbol}: Missing price data for Strong Start check")
+                    print(f"{symbol}: Missing price data for Strong Start check")
 
         return filtered_candidates

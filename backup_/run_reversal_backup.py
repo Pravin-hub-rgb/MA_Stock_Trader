@@ -12,6 +12,7 @@ from datetime import datetime, time, timedelta
 import pytz
 import psutil
 import portalocker
+import schedule
 import threading
 
 # Add src to path
@@ -83,7 +84,7 @@ def run_reversal_bot():
     # Import components directly
     sys.path.append('src/trading/live_trading')
 
-    from src.trading.live_trading.reversal_stock_monitor import ReversalStockMonitor
+    from src.trading.live_trading.stock_monitor import StockMonitor
     from src.trading.live_trading.reversal_monitor import ReversalMonitor
     from src.trading.live_trading.rule_engine import RuleEngine
     from src.trading.live_trading.selection_engine import SelectionEngine
@@ -95,7 +96,7 @@ def run_reversal_bot():
 
     # Create components
     upstox_fetcher = UpstoxFetcher()
-    monitor = ReversalStockMonitor()
+    monitor = StockMonitor()
     reversal_monitor = ReversalMonitor()
     rule_engine = RuleEngine()
     selection_engine = SelectionEngine()
@@ -157,6 +158,71 @@ def run_reversal_bot():
     # Initialize data streamer
     data_streamer = SimpleStockStreamer(instrument_keys, stock_symbols)
 
+    # MARKET_OPEN + 5 LOGIC - Simplified for testing
+    print("MARKET_OPEN + 5: Setting up simplified opening price capture...")
+    
+    def poll_opening_prices():
+        """Get opening prices from Upstox OHLC API with interval=1d for session data"""
+        print("MARKET_OPEN + 5: Getting opening prices from API...")
+        print(f"Current time: {datetime.now(IST).strftime('%H:%M:%S')}")
+        print(f"Instrument keys: {len(instrument_keys)}")
+        
+        try:
+            # Use the working OHLC API method we tested
+            ohlc_data = upstox_fetcher.get_current_ohlc([stock_symbols[key] for key in instrument_keys])
+            print(f"API response: {ohlc_data}")
+            
+            success_count = 0
+            
+            for key in instrument_keys:
+                symbol = stock_symbols[key]
+                if symbol in ohlc_data and 'open' in ohlc_data[symbol]:
+                    open_price = ohlc_data[symbol]['open']
+                    stock = monitor.stocks.get(key)
+                    if stock and stock.open_price is None:
+                        stock.set_open_price(open_price)
+                        stock.validate_gap()
+                        success_count += 1
+                        print(f"{symbol}: Official open Rs{open_price:.2f} set")
+                        # Log opening price for monitoring
+                        print(f"OPENING PRICE LOG: {symbol} = Rs{open_price:.2f}")
+                
+            print(f"API POLL SUCCESS: {success_count}/{len(instrument_keys)} opening prices retrieved")
+            
+            # Trigger chain reaction for gap validation and qualification
+            print("CHAIN REACTION: Starting gap validation and qualification...")
+            for stock in monitor.stocks.values():
+                if stock.open_price and not stock.gap_validated:
+                    stock.validate_gap()
+                    print(f"   {stock.symbol}: Gap validation completed")
+
+        except Exception as e:
+            print(f"API POLL FAILED: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Schedule API polling for MARKET_OPEN + 5 seconds
+    def schedule_api_poll():
+        """Schedule API poll for MARKET_OPEN + API_POLL_DELAY_SECONDS"""
+        # Calculate poll time: market open + delay
+        poll_datetime = datetime.combine(datetime.now(IST).date(), MARKET_OPEN) + timedelta(seconds=API_POLL_DELAY_SECONDS)
+        poll_time_str = poll_datetime.strftime("%H:%M:%S")
+
+        print(f"MARKET_OPEN + 5: Polling for opening prices at {poll_time_str}")
+
+        # Schedule the poll
+        schedule.every().day.at(poll_time_str).do(poll_opening_prices)
+
+        # If we're already past the poll time today, poll immediately
+        current_time = datetime.now(IST).time()
+        if current_time >= poll_datetime.time():
+            print("MARKET_OPEN + 5: Poll time already passed, polling immediately")
+            poll_opening_prices()
+        else:
+            print(f"MARKET_OPEN + 5: Poll scheduled for {poll_time_str}, waiting...")
+
+    # Schedule API polling
+    schedule_api_poll()
 
     # Reversal tick handler - ticks for monitoring only (opening prices from API)
     def tick_handler_reversal(instrument_key, symbol, price, timestamp, ohlc_list=None):
@@ -282,17 +348,17 @@ def run_reversal_bot():
         else:
             print("WARNING: Could not load reversal watchlist")
 
-        # Wait for prep start (market open - 30 seconds)
-        from config import PREP_START
+        # Wait for prep end (market open - 30 seconds)
+        from config import PREP_END
         current_time = datetime.now(IST).time()
 
-        if current_time < PREP_START:
-            prep_datetime = datetime.combine(datetime.now(IST).date(), PREP_START)
+        if current_time < PREP_END:
+            prep_datetime = datetime.combine(datetime.now(IST).date(), PREP_END)
             prep_datetime = IST.localize(prep_datetime)
             current_datetime = datetime.now(IST)
             wait_seconds = (prep_datetime - current_datetime).total_seconds()
             if wait_seconds > 0:
-                print(f"WAITING {wait_seconds:.0f} seconds until prep start...")
+                print(f"WAITING {wait_seconds:.0f} seconds until prep end...")
                 time_module.sleep(wait_seconds)
 
         print("=== STARTING REVERSAL TRADING PHASE ===")
@@ -320,42 +386,6 @@ def run_reversal_bot():
             # For reversal: API-based opening price capture
             print("USING API-BASED OPENING PRICE CAPTURE")
             print("Official opening prices from exchange at market open + 5 seconds")
-
-            # Get opening prices immediately after market open
-            print("MARKET_OPEN + 5: Getting opening prices from API...")
-            try:
-                # Use the working OHLC API method we tested
-                ohlc_data = upstox_fetcher.get_current_ohlc([stock_symbols[key] for key in instrument_keys])
-                print(f"API response: {ohlc_data}")
-                
-                success_count = 0
-                
-                for key in instrument_keys:
-                    symbol = stock_symbols[key]
-                    if symbol in ohlc_data and 'open' in ohlc_data[symbol]:
-                        open_price = ohlc_data[symbol]['open']
-                        stock = monitor.stocks.get(key)
-                        if stock and stock.open_price is None:
-                            stock.set_open_price(open_price)
-                            stock.validate_gap()
-                            success_count += 1
-                            print(f"{symbol}: Official open Rs{open_price:.2f} set")
-                            # Log opening price for monitoring
-                            print(f"OPENING PRICE LOG: {symbol} = Rs{open_price:.2f}")
-                
-                print(f"API POLL SUCCESS: {success_count}/{len(instrument_keys)} opening prices retrieved")
-                
-                # Trigger chain reaction for gap validation and qualification
-                print("CHAIN REACTION: Starting gap validation and qualification...")
-                for stock in monitor.stocks.values():
-                    if stock.open_price and not stock.gap_validated:
-                        stock.validate_gap()
-                        print(f"   {stock.symbol}: Gap validation completed")
-
-            except Exception as e:
-                print(f"API POLL FAILED: {e}")
-                import traceback
-                traceback.print_exc()
 
             # Continue with normal entry timing
             entry_time = ENTRY_TIME
@@ -416,6 +446,16 @@ def run_reversal_bot():
 
             # Keep monitoring for entries, exits, and trailing stops
             print("\nMONITORING for entry/exit signals...")
+
+            # Start scheduler for API polling in background thread
+            def run_scheduler():
+                while True:
+                    schedule.run_pending()
+                    time_module.sleep(1)
+
+            scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+            scheduler_thread.start()
+            print("SCHEDULER: Background API polling thread started")
 
             data_streamer.run()
 
