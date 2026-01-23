@@ -199,12 +199,12 @@ def run_reversal_bot():
                 opening_prices[symbol] = ohlc_data[symbol]['open']
 
         # MODULAR: Gap validation
-        from reversal_modules.reversal_gap_module import validate_gaps_after_opening_prices
+        from bot_modules.reversal.reversal_gap_module import validate_gaps_after_opening_prices
         qualified_stocks = validate_gaps_after_opening_prices(monitor.stocks, opening_prices)
         print(f"GAP VALIDATION: {len(qualified_stocks)} stocks qualified")
 
         # MODULAR: Waiting window monitoring
-        from reversal_modules.reversal_waiting_monitor import monitor_waiting_window, prepare_entry_triggers
+        from bot_modules.reversal.reversal_waiting_monitor import monitor_waiting_window, prepare_entry_triggers
         monitor_waiting_window(monitor.stocks, data_streamer, ENTRY_TIME)
         prepare_entry_triggers(monitor.stocks)
 
@@ -219,7 +219,7 @@ def run_reversal_bot():
 
         # MODULAR: Live trading execution
         print("=== LIVE TRADING ===")
-        from reversal_modules.reversal_trading_engine import execute_reversal_trading_cycle
+        from bot_modules.reversal.reversal_trading_engine import execute_reversal_trading_cycle
         execute_reversal_trading_cycle(
             stocks=monitor.stocks,
             data_streamer=data_streamer,

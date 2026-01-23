@@ -145,7 +145,7 @@ def run_continuation_bot():
     try:
         # MODULAR: PREP PHASE - Calculate VAH
         print("=== PREP PHASE ===")
-        from continuation_modules.vah_calculation_module import calculate_vah_for_continuation_stocks, save_vah_results_to_file, print_vah_results
+        from bot_modules.continuation.vah_calculation_module import calculate_vah_for_continuation_stocks, save_vah_results_to_file, print_vah_results
 
         continuation_symbols = [symbol for symbol, situation in situations.items() if situation == 'continuation']
         vah_dict = calculate_vah_for_continuation_stocks(continuation_symbols, volume_profile_calculator)
@@ -213,7 +213,7 @@ def run_continuation_bot():
 
         # MODULAR: Volume validation
         print("\n=== VOLUME VALIDATION ===")
-        from continuation_modules.volume_validation_module import validate_volume_requirements, update_volume_validation_status
+        from bot_modules.continuation.volume_validation_module import validate_volume_requirements, update_volume_validation_status
 
         validation_results = validate_volume_requirements(monitor.stocks)
         update_volume_validation_status(monitor.stocks, validation_results)
@@ -237,7 +237,7 @@ def run_continuation_bot():
         # MODULAR: Live trading execution
         print("\n=== LIVE TRADING ===")
         print("Monitoring for entry/exit signals...")
-        from continuation_modules.continuation_trading_engine import execute_continuation_trading_cycle
+        from bot_modules.continuation.continuation_trading_engine import execute_continuation_trading_cycle
 
         execute_continuation_trading_cycle(
             stocks=monitor.stocks,
