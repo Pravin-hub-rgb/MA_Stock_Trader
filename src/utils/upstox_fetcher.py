@@ -29,30 +29,48 @@ class UpstoxFetcher:
         # Don't initialize client immediately - do it lazily when needed
 
     def _load_config(self):
-        """Load Upstox API credentials"""
-        if not os.path.exists(self.config_file):
-            logger.warning(f"Config file {self.config_file} not found. Upstox features will be disabled.")
-            self.api_key = None
-            self.access_token = None
-            self.api_secret = None
-            return
-
+        """Load Upstox API credentials using TokenConfigManager for real-time access"""
         try:
-            with open(self.config_file, 'r') as f:
-                config = json.load(f)
-
-            self.api_key = config.get('api_key')
-            self.access_token = config.get('access_token')
-            self.api_secret = config.get('api_secret')
-
+            # Use TokenConfigManager for real-time token access
+            from .token_config_manager import token_config_manager
+            self._config_manager = token_config_manager
+            
+            # Get current token from config manager
+            self.access_token = self._config_manager.get_token()
+            self.api_key = self._config_manager.get_api_credentials().get('api_key')
+            self.api_secret = self._config_manager.get_api_credentials().get('api_secret')
+            
             if not all([self.api_key, self.access_token]):
-                logger.warning("API key and access token not found in config. Upstox features will be disabled.")
+                logger.warning("API key and access token not found. Upstox features will be disabled.")
                 self.api_key = None
                 self.access_token = None
-        except Exception as e:
-            logger.warning(f"Error loading Upstox config: {e}. Upstox features will be disabled.")
-            self.api_key = None
-            self.access_token = None
+                self.api_secret = None
+        except ImportError:
+            # Fallback to direct file reading if TokenConfigManager not available
+            logger.warning("TokenConfigManager not available, using fallback config loading")
+            if not os.path.exists(self.config_file):
+                logger.warning(f"Config file {self.config_file} not found. Upstox features will be disabled.")
+                self.api_key = None
+                self.access_token = None
+                self.api_secret = None
+                return
+
+            try:
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+
+                self.api_key = config.get('api_key')
+                self.access_token = config.get('access_token')
+                self.api_secret = config.get('api_secret')
+
+                if not all([self.api_key, self.access_token]):
+                    logger.warning("API key and access token not found in config. Upstox features will be disabled.")
+                    self.api_key = None
+                    self.access_token = None
+            except Exception as e:
+                logger.warning(f"Error loading Upstox config: {e}. Upstox features will be disabled.")
+                self.api_key = None
+                self.access_token = None
 
     def _load_instrument_mapping(self):
         """Load instrument key mapping from Upstox master file"""

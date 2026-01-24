@@ -14,7 +14,7 @@ import psutil
 import portalocker
 
 # Add src to path
-sys.path.append('src')
+sys.path.insert(0, 'src')
 
 # Configure logging to show detailed VAH calculation info
 # Use print statements instead of logging for UI compatibility
@@ -80,17 +80,17 @@ def run_continuation_bot():
     print("=" * 50)
 
     # Import components directly
-    sys.path.append('src/trading/live_trading')
+    sys.path.insert(0, 'src/trading/live_trading')
 
-    from src.trading.live_trading.continuation_stock_monitor import StockMonitor
-    from src.trading.live_trading.rule_engine import RuleEngine
-    from src.trading.live_trading.selection_engine import SelectionEngine
-    from src.trading.live_trading.paper_trader import PaperTrader
-    from src.trading.live_trading.simple_data_streamer import SimpleStockStreamer
+    from continuation_stock_monitor import StockMonitor
+    from rule_engine import RuleEngine
+    from selection_engine import SelectionEngine
+    from paper_trader import PaperTrader
+    from simple_data_streamer import SimpleStockStreamer
 
-    from src.trading.live_trading.volume_profile import volume_profile_calculator
+    from volume_profile import volume_profile_calculator
     from src.utils.upstox_fetcher import UpstoxFetcher
-    from src.trading.live_trading.config import MARKET_OPEN, ENTRY_TIME
+    from config import MARKET_OPEN, ENTRY_TIME
 
     # Create components
     upstox_fetcher = UpstoxFetcher()
@@ -105,7 +105,7 @@ def run_continuation_bot():
     print()
 
     # Load continuation stock configuration
-    from src.trading.live_trading.stock_classifier import StockClassifier
+    from stock_classifier import StockClassifier
     classifier = StockClassifier()
     stock_config = classifier.get_continuation_stock_configuration()
 
@@ -219,7 +219,7 @@ def run_continuation_bot():
         print("=== PREP TIME: Loading metadata and preparing data ===")
 
         # Load stock scoring metadata (ADR, volume baselines, etc.)
-        from src.trading.live_trading.stock_scorer import stock_scorer
+        from stock_scorer import stock_scorer
         stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
         print("OK Stock metadata loaded for scoring")
 

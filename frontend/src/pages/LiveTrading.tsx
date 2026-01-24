@@ -230,25 +230,19 @@ const LiveTrading: React.FC = () => {
       if (currentData.exists && currentData.token) {
         setAccessToken(currentData.token);
 
-        // Always validate the token to ensure it's working
-        const validateResponse = await fetch('/api/token/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: currentData.token })
-        });
+        // Use the new simple token check endpoint instead of validate
+        const checkResponse = await fetch('/api/token/check');
+        const checkData = await checkResponse.json();
 
-        const validateData = await validateResponse.json();
-
-        if (validateResponse.ok && validateData.valid) {
-          const stockResults = validateData.test_results ? validateData.test_results.join('\n') : '';
+        if (checkResponse.ok && checkData.valid) {
           setTokenValidationResult('✅ Token Status Refreshed - Valid!\n\n' +
             `🔑 Token: ${currentData.masked || '****...****'}\n` +
-            `📊 Test Results:\n${stockResults}\n` +
+            `📊 Test Results:\n${checkData.test_result || 'Token validation successful'}\n` +
             `⏰ Refreshed at: ${new Date().toLocaleString()}\n\n` +
             'Token is working correctly for live trading.');
           setTokenStatus('valid');
         } else {
-          setTokenValidationResult(`❌ Token Status Refreshed - Invalid\n\n${validateData.error || 'Token expired or invalid'}`);
+          setTokenValidationResult(`❌ Token Status Refreshed - Invalid\n\n${checkData.message || 'Token expired or invalid'}`);
           setTokenStatus('invalid');
         }
       } else {
@@ -291,13 +285,19 @@ const LiveTrading: React.FC = () => {
           `⏰ Validated at: ${new Date().toLocaleString()}\n\n` +
           'Token has been saved to config. You can now proceed to list validation.');
         setTokenStatus('valid');
+        
+        // Auto-close the form on success
+        setShowUpdateForm(false);
+        setAccessToken(''); // Clear the input field
       } else {
         setTokenValidationResult(`❌ Token Validation Failed\n\n${data.error || 'Invalid or expired token'}`);
         setTokenStatus('invalid');
+        // Keep the form open on error so user can try again
       }
     } catch (error) {
       setTokenValidationResult(`❌ Network Error\n\nFailed to validate token: ${error}`);
       setTokenStatus('invalid');
+      // Keep the form open on error
     } finally {
       setIsValidatingToken(false);
     }

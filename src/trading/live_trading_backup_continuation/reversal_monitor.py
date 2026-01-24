@@ -246,7 +246,7 @@ class ReversalMonitor:
             self._rank_category_stocks(self.secondary_stocks, stock_scorer, "Secondary")
             self._rank_category_stocks(self.tertiary_stocks, stock_scorer, "Tertiary")
 
-            print("✓ Stock ranking completed - higher ranked stocks will be monitored first")
+            print("Stock ranking completed - higher ranked stocks will be monitored first")
 
         except Exception as e:
             print(f"Error ranking stocks: {e}")

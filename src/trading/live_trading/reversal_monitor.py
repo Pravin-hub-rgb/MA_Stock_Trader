@@ -144,7 +144,7 @@ class ReversalMonitor:
                     stock.prev_close = prev_closes[stock.symbol]
                     print(f"Set prev_close for {stock.symbol}: ₹{stock.prev_close:.2f}")
                 else:
-                    print(f"⚠ No prev_close found for {stock.symbol}")
+                    print(f"No prev_close found for {stock.symbol}")
 
 
     def get_opening_price_from_api(self, symbol: str) -> Optional[float]:
@@ -246,7 +246,7 @@ class ReversalMonitor:
             self._rank_category_stocks(self.secondary_stocks, stock_scorer, "Secondary")
             self._rank_category_stocks(self.tertiary_stocks, stock_scorer, "Tertiary")
 
-            print("✓ Stock ranking completed - higher ranked stocks will be monitored first")
+            print("Stock ranking completed - higher ranked stocks will be monitored first")
 
         except Exception as e:
             print(f"Error ranking stocks: {e}")

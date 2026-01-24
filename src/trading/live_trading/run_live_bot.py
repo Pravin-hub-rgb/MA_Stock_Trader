@@ -20,10 +20,10 @@ def main():
 
     if mode == 'c':
         print("LAUNCHING CONTINUATION BOT (OHLC-only)...")
-        bot_script = 'run_continuation.py'
+        bot_script = 'src/trading/live_trading/run_continuation.py'
     elif mode == 'r':
         print("LAUNCHING REVERSAL BOT (Tick-based)...")
-        bot_script = 'run_reversal.py'
+        bot_script = 'src/trading/live_trading/run_reversal.py'
     else:
         print(f"ERROR: Invalid mode '{mode}'. Use 'c' for continuation or 'r' for reversal.")
         sys.exit(1)
@@ -31,6 +31,7 @@ def main():
     # Check if bot script exists
     if not os.path.exists(bot_script):
         print(f"ERROR: {bot_script} not found!")
+        print(f"Looking for: {os.path.abspath(bot_script)}")
         sys.exit(1)
 
     try:

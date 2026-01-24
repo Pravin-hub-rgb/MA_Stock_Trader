@@ -14,8 +14,8 @@ import psutil
 import portalocker
 import threading
 
-# Add src to path
-sys.path.append('src')
+# Add current directory to path (project root)
+sys.path.insert(0, '.')
 
 # Configure logging to show detailed VAH calculation info
 # Use print statements instead of logging for UI compatibility
@@ -81,14 +81,14 @@ def run_reversal_bot():
     print("=" * 55)
 
     # Import components directly
-    sys.path.append('src/trading/live_trading')
+    sys.path.insert(0, 'src/trading/live_trading')
 
-    from src.trading.live_trading.reversal_stock_monitor import ReversalStockMonitor
-    from src.trading.live_trading.reversal_monitor import ReversalMonitor
-    from src.trading.live_trading.rule_engine import RuleEngine
-    from src.trading.live_trading.selection_engine import SelectionEngine
-    from src.trading.live_trading.paper_trader import PaperTrader
-    from src.trading.live_trading.simple_data_streamer import SimpleStockStreamer
+    from reversal_stock_monitor import ReversalStockMonitor
+    from reversal_monitor import ReversalMonitor
+    from rule_engine import RuleEngine
+    from selection_engine import SelectionEngine
+    from paper_trader import PaperTrader
+    from simple_data_streamer import SimpleStockStreamer
 
     from src.utils.upstox_fetcher import UpstoxFetcher
     from config import MARKET_OPEN, ENTRY_TIME, API_POLL_DELAY_SECONDS, API_RETRY_DELAY_SECONDS
@@ -107,7 +107,7 @@ def run_reversal_bot():
     print()
 
     # Load reversal stock configuration
-    from src.trading.live_trading.stock_classifier import StockClassifier
+    from stock_classifier import StockClassifier
     classifier = StockClassifier()
     stock_config = classifier.get_reversal_stock_configuration()
 
@@ -270,7 +270,7 @@ def run_reversal_bot():
         print("=== PREP TIME: Loading metadata and preparing data ===")
 
         # Load stock scoring metadata (ADR, volume baselines, etc.)
-        from src.trading.live_trading.stock_scorer import stock_scorer
+        from stock_scorer import stock_scorer
         stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
         print("OK Stock metadata loaded for scoring")
 

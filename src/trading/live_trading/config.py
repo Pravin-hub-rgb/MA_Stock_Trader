@@ -8,7 +8,7 @@ Real market trading configuration - no simulation or test modes
 from datetime import time, timedelta, datetime
 
 # Market timing (IST)
-MARKET_OPEN = time(9, 15)      # 9:15 AM market open
+MARKET_OPEN = time(13, 23)      # 9:15 AM market open
 WINDOW_LENGTH = 3             # Entry window length in minutes (45 minutes)
 PREP_START = (datetime.combine(datetime.today(), MARKET_OPEN) - timedelta(seconds=30)).time()  # 30 seconds before market open
 ENTRY_TIME = (datetime.combine(datetime.today(), MARKET_OPEN) + timedelta(minutes=WINDOW_LENGTH)).time()  # MARKET_OPEN + WINDOW_LENGTH

@@ -367,9 +367,9 @@ async def start_live_trading(data: dict, background_tasks: BackgroundTasks):
         try:
             # Launch the unified bot script with mode argument
             if mode == 'continuation':
-                cmd = ['python', 'run_live_bot.py', 'c']
+                cmd = ['python', 'src/trading/live_trading/run_live_bot.py', 'c']
             else:
-                cmd = ['python', 'run_live_bot.py', 'r']
+                cmd = ['python', 'src/trading/live_trading/run_live_bot.py', 'r']
 
             logger.info(f"Starting bot with command: {' '.join(cmd)}")
             logger.info(f"Working directory: {os.getcwd()}")
@@ -1057,21 +1057,68 @@ async def clear_trading_file(list_type: str):
         logger.error(f"Failed to clear trading file: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear trading file: {str(e)}")
 
-# Token Management
+# Token Management - New Modular System
 
 @app.post("/api/token/validate")
 async def validate_access_token(token_data: dict):
-    """Validate Upstox access token by testing with actual trading list stocks"""
+    """Validate Upstox access token using UpstoxFetcher (same as live trading)"""
     try:
-        from src.utils.token_validator import token_validator
+        from src.utils.token_config_manager import token_config_manager
+        from src.utils.upstox_fetcher import upstox_fetcher
 
         token = token_data.get('token', '').strip()
 
         if not token:
             raise HTTPException(status_code=400, detail="Token is required")
 
-        result = token_validator.validate_token(token)
-        return result
+        # 1. Update token in config file
+        success = token_config_manager.update_token(token)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update token")
+
+        # 2. Force UpstoxFetcher to reload the token immediately
+        upstox_fetcher._load_config()
+
+        # 3. Test the token using UpstoxFetcher (same as live trading)
+        # Try to get LTP data for RELIANCE
+        ltp_data = upstox_fetcher.get_ltp_data('RELIANCE')
+
+        # 4. If UpstoxFetcher can get data, the token is valid
+        if ltp_data and 'ltp' in ltp_data:
+            return {
+                'valid': True,
+                'message': 'Token validated successfully',
+                'test_result': f'RELIANCE LTP: ₹{ltp_data["ltp"]}',
+                'timestamp': datetime.now().isoformat()
+            }
+        else:
+            # If we can't get LTP data, check if it's due to invalid token
+            # by trying to initialize the Upstox client
+            try:
+                upstox_fetcher._ensure_initialized()
+                # If initialization succeeds, the token might be valid but API is down
+                # If initialization fails with 401, the token is definitely invalid
+                return {
+                    'valid': False,
+                    'error': 'Token validation failed - could not fetch market data',
+                    'test_result': 'No LTP data received (token may be invalid or API unavailable)',
+                    'timestamp': datetime.now().isoformat()
+                }
+            except Exception as init_error:
+                if '401' in str(init_error) or 'Invalid token' in str(init_error):
+                    return {
+                        'valid': False,
+                        'error': 'Token validation failed - invalid token',
+                        'test_result': 'Invalid token detected',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        'valid': False,
+                        'error': f'Token validation failed - {str(init_error)}',
+                        'test_result': 'Client initialization failed',
+                        'timestamp': datetime.now().isoformat()
+                    }
 
     except HTTPException:
         raise
@@ -1079,41 +1126,101 @@ async def validate_access_token(token_data: dict):
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def update_token_in_config(token: str):
-    """Update access token in config file"""
-    try:
-        import json
-        config_path = Path('config/config.json')
-
-        # Load existing config
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-        else:
-            config = {}
-
-        # Update token
-        config['upstox_access_token'] = token
-
-        # Save config
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
-
-        logger.info("Access token updated in config file")
-
-    except Exception as e:
-        logger.error(f"Failed to update config: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to save token: {str(e)}")
-
 @app.get("/api/token/current")
 async def get_current_token():
-    """Get current access token from config file"""
+    """Get current access token status using the new modular system"""
     try:
-        from src.utils.token_validator import token_validator
-        return token_validator.get_current_token()
+        from src.utils.token_validator_module import token_validator_module
+        return token_validator_module.get_current_token_status()
     except Exception as e:
         logger.error(f"Failed to read current token: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to read token: {str(e)}")
+
+@app.get("/api/token/check")
+async def check_token_status():
+    """Simple token status check - reads token from config and tests validity without writing back"""
+    try:
+        from src.utils.token_validator_module import token_validator_module
+        from src.utils.upstox_fetcher import upstox_fetcher
+
+        # Get current token status
+        status = token_validator_module.get_current_token_status()
+        
+        if not status.get('token'):
+            return {
+                'valid': False,
+                'message': 'No token found in config file',
+                'timestamp': datetime.now().isoformat()
+            }
+
+        # Test the token using UpstoxFetcher (same as live trading)
+        # Try to get LTP data for RELIANCE
+        ltp_data = upstox_fetcher.get_ltp_data('RELIANCE')
+
+        # If UpstoxFetcher can get data, the token is valid
+        if ltp_data and 'ltp' in ltp_data:
+            return {
+                'valid': True,
+                'message': 'Token is valid',
+                'test_result': f'RELIANCE LTP: ₹{ltp_data["ltp"]}',
+                'timestamp': datetime.now().isoformat()
+            }
+        else:
+            # If we can't get LTP data, check if it's due to invalid token
+            # by trying to initialize the Upstox client
+            try:
+                upstox_fetcher._ensure_initialized()
+                # If initialization succeeds, the token might be valid but API is down
+                # If initialization fails with 401, the token is definitely invalid
+                return {
+                    'valid': False,
+                    'message': 'Token validation failed - could not fetch market data',
+                    'test_result': 'No LTP data received (token may be invalid or API unavailable)',
+                    'timestamp': datetime.now().isoformat()
+                }
+            except Exception as init_error:
+                if '401' in str(init_error) or 'Invalid token' in str(init_error):
+                    return {
+                        'valid': False,
+                        'message': 'Token validation failed - invalid token',
+                        'test_result': 'Invalid token detected',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        'valid': False,
+                        'message': f'Token validation failed - {str(init_error)}',
+                        'test_result': 'Client initialization failed',
+                        'timestamp': datetime.now().isoformat()
+                    }
+
+    except Exception as e:
+        logger.error(f"Token check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Token check failed: {str(e)}")
+
+
+@app.post("/api/token/update")
+async def update_token_config(token_data: dict):
+    """Update token in config file using the new modular system"""
+    try:
+        from src.utils.token_validator_module import token_validator_module
+        
+        token = token_data.get('token', '').strip()
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required")
+
+        result = token_validator_module.update_token_in_config(token)
+        
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result['message'])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token update failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Background task functions
 
