@@ -336,11 +336,11 @@ async def start_live_trading(data: dict, background_tasks: BackgroundTasks):
         import threading
 
         try:
-            # Launch the unified bot script with mode argument
+            # Launch the correct bot script with mode argument
             if mode == 'continuation':
-                cmd = ['python', 'run_live_bot.py', 'c']
+                cmd = ['python', 'src/trading/live_trading/run_continuation.py']
             else:
-                cmd = ['python', 'run_live_bot.py', 'r']
+                cmd = ['python', 'src/trading/live_trading/run_reversal.py']
 
             logger.info(f"Starting bot with command: {' '.join(cmd)}")
             logger.info(f"Working directory: {os.getcwd()}")

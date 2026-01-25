@@ -12,10 +12,9 @@ from datetime import datetime, time, timedelta
 import pytz
 import psutil
 import portalocker
-import threading
 
-# Add current directory to path (project root)
-sys.path.insert(0, '.')
+# Add src to path
+sys.path.insert(0, 'src')
 
 # Configure logging to show detailed VAH calculation info
 # Use print statements instead of logging for UI compatibility
@@ -90,8 +89,9 @@ def run_reversal_bot():
     from paper_trader import PaperTrader
     from simple_data_streamer import SimpleStockStreamer
 
-    from src.utils.upstox_fetcher import UpstoxFetcher
-    from config import MARKET_OPEN, ENTRY_TIME, API_POLL_DELAY_SECONDS, API_RETRY_DELAY_SECONDS
+    from volume_profile import volume_profile_calculator
+    from src.utils.upstox_fetcher import UpstoxFetcher, iep_manager
+    from config import MARKET_OPEN, ENTRY_TIME, PREP_START, API_POLL_DELAY_SECONDS, API_RETRY_DELAY_SECONDS
 
     # Create components
     upstox_fetcher = UpstoxFetcher()
@@ -107,7 +107,7 @@ def run_reversal_bot():
     print()
 
     # Load reversal stock configuration
-    from stock_classifier import StockClassifier
+    from src.trading.live_trading.stock_classifier import StockClassifier
     classifier = StockClassifier()
     stock_config = classifier.get_reversal_stock_configuration()
 
@@ -132,7 +132,7 @@ def run_reversal_bot():
             data = upstox_fetcher.get_ltp_data(symbol)
             if data and 'cp' in data and data['cp'] is not None:
                 prev_closes[symbol] = float(data['cp'])
-                print(f"   OK {symbol}: Rs{prev_closes[symbol]:.2f}")
+                print(f"   OK {symbol}: Prev Close Rs{prev_closes[symbol]:.2f}")
             else:
                 print(f"   ERROR {symbol}: No previous close data")
         except Exception as e:
@@ -157,13 +157,84 @@ def run_reversal_bot():
     # Initialize data streamer
     data_streamer = SimpleStockStreamer(instrument_keys, stock_symbols)
 
+    # PRE-MARKET IEP FETCH SEQUENCE (Priority 1 Fix)
+    print("=== PRE-MARKET IEP FETCH SEQUENCE ===")
+    
+    # Wait for PREP_START time (30 seconds before market open)
+    prep_start = PREP_START
+    current_time = datetime.now(IST).time()
+    
+    if current_time < prep_start:
+        prep_datetime = datetime.combine(datetime.now(IST).date(), prep_start)
+        prep_datetime = IST.localize(prep_datetime)
+        current_datetime = datetime.now(IST)
+        wait_seconds = (prep_datetime - current_datetime).total_seconds()
+        if wait_seconds > 0:
+            print(f"WAITING {wait_seconds:.0f} seconds until PREP_START ({prep_start})...")
+            time_module.sleep(wait_seconds)
+    
+    # Fetch IEP for all reversal stocks
+    print(f"FETCHING IEP for {len(symbols)} reversal stocks...")
+    
+    # Clean symbols from reversal_list.txt (remove postfix like -u11, -d14)
+    clean_symbols = []
+    for symbol in symbols:
+        # Remove postfix after dash if present
+        if '-' in symbol:
+            clean_symbol = symbol.split('-')[0]
+            clean_symbols.append(clean_symbol)
+        else:
+            clean_symbols.append(symbol)
+    
+    print(f"Clean symbols for IEP: {clean_symbols}")
+    
+    # Import IEP manager
+    from src.utils.upstox_fetcher import iep_manager
+    iep_prices = iep_manager.fetch_iep_batch(clean_symbols)
+    
+    if iep_prices:
+        print("IEP FETCH COMPLETED SUCCESSFULLY")
+        
+        # Set opening prices and run gap validation
+        for symbol in symbols:
+            # Find the clean symbol for IEP lookup
+            clean_symbol = symbol.split('-')[0] if '-' in symbol else symbol
+            
+            if clean_symbol in iep_prices:
+                iep_price = iep_prices[clean_symbol]
+                # Find stock by symbol
+                stock = None
+                for s in monitor.stocks.values():
+                    if s.symbol == symbol:
+                        stock = s
+                        break
+                
+                if stock:
+                    stock.set_open_price(iep_price)
+                    print(f"Set opening price for {symbol}: Rs{iep_price:.2f}")
+                    
+                    # Run gap validation immediately (at 9:14:30)
+                    if hasattr(stock, 'validate_gap'):
+                        stock.validate_gap()
+                        if stock.gap_validated:
+                            print(f"Gap validated for {symbol}")
+                        else:
+                            print(f"Gap validation failed for {symbol}")
+                else:
+                    print(f"Stock not found for symbol: {symbol}")
+            else:
+                print(f"IEP price not found for symbol: {symbol}")
+    else:
+        print("IEP FETCH FAILED - MANUAL OPENING PRICE CAPTURE REQUIRED")
+        print("WARNING: Opening prices will need to be set manually or via alternative method")
 
     # Reversal tick handler - ticks for monitoring only (opening prices from API)
     def tick_handler_reversal(instrument_key, symbol, price, timestamp, ohlc_list=None):
         """Reversal tick handler - ticks for monitoring/triggers only"""
         global global_selected_stocks, global_selected_symbols
 
-        # Process tick data for price tracking and violations
+        # LOG ACTUAL TICK PRICE AND TIME (removed to reduce spam)
+
         monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
 
         # Get stock for processing
@@ -252,14 +323,12 @@ def run_reversal_bot():
                 stock.exit_position(price, timestamp, "Stop Loss Hit")
                 paper_trader.log_exit(stock, price, timestamp, "Stop Loss Hit")
 
+        # Position status logging removed to reduce tick spam
+
     # Set the reversal tick handler
     data_streamer.tick_handler = tick_handler_reversal
     global_selected_stocks = []
     global_selected_symbols = set()
-
-    # Initialize global variables for tick handler
-    globals()['global_selected_stocks'] = []
-    globals()['global_selected_symbols'] = set()
 
     print("\n=== REVERSAL BOT INITIALIZED ===")
     print("Using API-based opening prices with tick monitoring")
@@ -270,7 +339,7 @@ def run_reversal_bot():
         print("=== PREP TIME: Loading metadata and preparing data ===")
 
         # Load stock scoring metadata (ADR, volume baselines, etc.)
-        from stock_scorer import stock_scorer
+        from src.trading.live_trading.stock_scorer import stock_scorer
         stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
         print("OK Stock metadata loaded for scoring")
 
@@ -282,17 +351,17 @@ def run_reversal_bot():
         else:
             print("WARNING: Could not load reversal watchlist")
 
-        # Wait for prep start (market open - 30 seconds)
-        from config import PREP_START
+        # Wait for market open (no prep end needed)
         current_time = datetime.now(IST).time()
+        market_open = MARKET_OPEN
 
-        if current_time < PREP_START:
-            prep_datetime = datetime.combine(datetime.now(IST).date(), PREP_START)
-            prep_datetime = IST.localize(prep_datetime)
+        if current_time < market_open:
+            market_datetime = datetime.combine(datetime.now(IST).date(), market_open)
+            market_datetime = IST.localize(market_datetime)
             current_datetime = datetime.now(IST)
-            wait_seconds = (prep_datetime - current_datetime).total_seconds()
+            wait_seconds = (market_datetime - current_datetime).total_seconds()
             if wait_seconds > 0:
-                print(f"WAITING {wait_seconds:.0f} seconds until prep start...")
+                print(f"WAITING {wait_seconds:.0f} seconds until market open...")
                 time_module.sleep(wait_seconds)
 
         print("=== STARTING REVERSAL TRADING PHASE ===")
@@ -316,46 +385,6 @@ def run_reversal_bot():
                     time_module.sleep(wait_seconds)
 
             print("MARKET OPEN! Monitoring live tick data...")
-
-            # For reversal: API-based opening price capture
-            print("USING API-BASED OPENING PRICE CAPTURE")
-            print("Official opening prices from exchange at market open + 5 seconds")
-
-            # Get opening prices immediately after market open
-            print("MARKET_OPEN + 5: Getting opening prices from API...")
-            try:
-                # Use the working OHLC API method we tested
-                ohlc_data = upstox_fetcher.get_current_ohlc([stock_symbols[key] for key in instrument_keys])
-                print(f"API response: {ohlc_data}")
-                
-                success_count = 0
-                
-                for key in instrument_keys:
-                    symbol = stock_symbols[key]
-                    if symbol in ohlc_data and 'open' in ohlc_data[symbol]:
-                        open_price = ohlc_data[symbol]['open']
-                        stock = monitor.stocks.get(key)
-                        if stock and stock.open_price is None:
-                            stock.set_open_price(open_price)
-                            stock.validate_gap()
-                            success_count += 1
-                            print(f"{symbol}: Official open Rs{open_price:.2f} set")
-                            # Log opening price for monitoring
-                            print(f"OPENING PRICE LOG: {symbol} = Rs{open_price:.2f}")
-                
-                print(f"API POLL SUCCESS: {success_count}/{len(instrument_keys)} opening prices retrieved")
-                
-                # Trigger chain reaction for gap validation and qualification
-                print("CHAIN REACTION: Starting gap validation and qualification...")
-                for stock in monitor.stocks.values():
-                    if stock.open_price and not stock.gap_validated:
-                        stock.validate_gap()
-                        print(f"   {stock.symbol}: Gap validation completed")
-
-            except Exception as e:
-                print(f"API POLL FAILED: {e}")
-                import traceback
-                traceback.print_exc()
 
             # Continue with normal entry timing
             entry_time = ENTRY_TIME

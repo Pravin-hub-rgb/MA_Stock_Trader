@@ -2,72 +2,128 @@
   "stocks": [
     {
       "symbol": "AGIIL",
-      "period": 10,
+      "period": 11,
       "trend": "uptrend",
-      "added_at": "2026-01-22T21:05:41.186870",
+      "added_at": "2026-01-25T18:33:51.640753",
       "added_from": "scan_results"
     },
     {
       "symbol": "ARISINFRA",
-      "period": 13,
+      "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-01-22T21:05:48.790133",
+      "added_at": "2026-01-25T18:34:30.265745",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "ASHAPURMIN",
+      "period": 8,
+      "trend": "uptrend",
+      "added_at": "2026-01-25T18:34:39.828844",
       "added_from": "scan_results"
     },
     {
       "symbol": "BALUFORGE",
       "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-01-22T21:05:53.404588",
+      "added_at": "2026-01-25T18:35:00.027940",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "BHEL",
+      "period": 11,
+      "trend": "uptrend",
+      "added_at": "2026-01-25T18:35:14.020318",
       "added_from": "scan_results"
     },
     {
       "symbol": "DEVYANI",
-      "period": 14,
+      "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-01-22T21:06:09.076857",
+      "added_at": "2026-01-25T18:35:29.079705",
       "added_from": "scan_results"
     },
     {
-      "symbol": "EPACK",
+      "symbol": "ENGINERSIN",
+      "period": 14,
+      "trend": "downtrend",
+      "added_at": "2026-01-25T18:35:49.226738",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "GODREJPROP",
+      "period": 13,
+      "trend": "downtrend",
+      "added_at": "2026-01-25T18:36:28.569630",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "IIFL",
       "period": 12,
       "trend": "downtrend",
-      "added_at": "2026-01-22T21:06:19.017163",
+      "added_at": "2026-01-25T18:36:40.050500",
       "added_from": "scan_results"
     },
     {
       "symbol": "JBMA",
-      "period": 10,
+      "period": 11,
       "trend": "uptrend",
-      "added_at": "2026-01-22T21:06:33.014394",
+      "added_at": "2026-01-25T18:36:56.711641",
       "added_from": "scan_results"
     },
     {
       "symbol": "KALYANKJIL",
-      "period": 10,
+      "period": 11,
       "trend": "uptrend",
-      "added_at": "2026-01-22T21:06:41.413074",
+      "added_at": "2026-01-25T18:37:03.475878",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "MOBIKWIK",
+      "period": 8,
+      "trend": "downtrend",
+      "added_at": "2026-01-25T18:37:16.442932",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "ORIENTTECH",
+      "period": 14,
+      "trend": "downtrend",
+      "added_at": "2026-01-25T18:37:37.596974",
       "added_from": "scan_results"
     },
     {
       "symbol": "NETWEB",
-      "period": 4,
+      "period": 5,
       "trend": "uptrend",
-      "added_at": "2026-01-22T21:06:52.375561",
+      "added_at": "2026-01-25T18:37:38.048643",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PNBHOUSING",
+      "period": 12,
+      "trend": "downtrend",
+      "added_at": "2026-01-25T18:37:49.852958",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "SPMLINFRA",
+      "period": 5,
+      "trend": "downtrend",
+      "added_at": "2026-01-25T18:38:25.620056",
       "added_from": "scan_results"
     },
     {
       "symbol": "TEJASNET",
-      "period": 13,
+      "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-01-22T21:07:12.411958",
+      "added_at": "2026-01-25T18:38:32.904414",
       "added_from": "scan_results"
     },
     {
       "symbol": "ZAGGLE",
-      "period": 13,
+      "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-01-22T21:07:21.697115",
+      "added_at": "2026-01-25T18:38:53.745448",
       "added_from": "scan_results"
     }
   ]

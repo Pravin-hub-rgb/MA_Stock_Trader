@@ -294,6 +294,45 @@ class UpstoxFetcher:
             logger.error(f"Error getting latest data for {symbol}: {e}")
             return {}
 
+    def get_opening_price(self, symbol: str) -> Optional[float]:
+        """
+        Get opening price using your exact function logic
+        Called at PREP_START timing for both reversal and continuation bots
+        """
+        try:
+            instrument_key = self.get_instrument_key(symbol)
+            if not instrument_key:
+                logger.error(f"No instrument key found for {symbol}")
+                return None
+
+            url = f"https://api.upstox.com/v2/market-quote/quotes?instrument_key={instrument_key}"
+            headers = {
+                "Accept": "application/json",
+                "Api-Version": "2.0",
+                "Authorization": f"Bearer {self.access_token}"
+            }
+            
+            response = requests.get(url, headers=headers).json()
+            
+            if response.get('status') == 'success':
+                # Find the actual key format in the response
+                actual_data = None
+                for key, value in response.get('data', {}).items():
+                    if symbol.upper() in key:
+                        actual_data = value
+                        break
+                
+                # Use 'last_price' field instead of 'ltp'
+                price = actual_data.get('last_price') if actual_data else None
+                if price:
+                    return float(price)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching opening price for {symbol}: {e}")
+            return None
+
     def get_ltp_data(self, symbol: str) -> Dict:
         """
         Get LTP (Last Traded Price) data using available API methods
@@ -453,5 +492,10 @@ class UpstoxFetcher:
             logger.error(f"Error in LTP fallback for {symbol}: {e}")
             return {}
 
+# Import IEP module
+from .upstox_modules.pre_market_iep_module import PreMarketIEPManager
+
 # Global instance
 upstox_fetcher = UpstoxFetcher(config_file=os.path.abspath('upstox_config.json'))
+# Global IEP manager instance
+iep_manager = PreMarketIEPManager(upstox_fetcher)

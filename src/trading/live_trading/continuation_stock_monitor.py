@@ -122,6 +122,22 @@ class StockState:
         logger.info(f"[{self.symbol}] Gap {gap_type} validated: {gap_pct:.1%} ({self.situation})")
         return True
 
+    def validate_vah_rejection(self, vah_price: float) -> bool:
+        """Validate that opening price is above previous day's VAH (for continuation)"""
+        if self.open_price is None:
+            return False
+
+        # Only apply VAH validation for continuation stocks
+        if self.situation != 'continuation':
+            return True
+
+        if self.open_price < vah_price:
+            self.reject(f"Opening price {self.open_price:.2f} < VAH {vah_price:.2f}")
+            return False
+
+        logger.info(f"[{self.symbol}] VAH validation passed: Open {self.open_price:.2f} >= VAH {vah_price:.2f}")
+        return True
+
     def get_candidate_type(self) -> str:
         """Get candidate type based on gap direction and situation"""
         if not self.gap_validated or self.open_price is None:
@@ -343,13 +359,13 @@ class StockMonitor:
         return qualified
 
     def process_candle_data(self, instrument_key: str, symbol: str, ohlc_list: list):
-        """Process 1-minute candle data to set reliable opening price for continuation mode"""
+        """Process 1-minute candle data for continuation stocks - only track high/low, opening price already set from IEP"""
         if instrument_key not in self.stocks:
             return
 
         stock = self.stocks[instrument_key]
 
-        # Only process OHLC for continuation stocks (pure OHLC approach)
+        # Only process OHLC for continuation stocks
         if stock.situation != 'continuation':
             return
 
@@ -376,16 +392,20 @@ class StockMonitor:
                 if time_diff <= 60:  # Within 1 minute window
                     # Debug: Log candle processing
                     open_price = float(candle_data.get('open', 0))
-                    logger.info(f"[{symbol}] Processing I1 candle: time={candle_time.strftime('%H:%M:%S')}, expected={expected_ohlc_time.strftime('%H:%M:%S')}, open={open_price:.2f}")
+                    high_price = float(candle_data.get('high', 0))
+                    low_price = float(candle_data.get('low', 0))
+                    
+                    logger.info(f"[{symbol}] Processing I1 candle: time={candle_time.strftime('%H:%M:%S')}, expected={expected_ohlc_time.strftime('%H:%M:%S')}")
+                    logger.info(f"[{symbol}] OHLC: Open={open_price:.2f}, High={high_price:.2f}, Low={low_price:.2f}")
 
-                    # Use this 1-minute candle's open price for continuation stocks
-                    if stock.open_price is None and open_price > 0:
-                        stock.set_open_price(open_price)
-                        logger.info(f"[{symbol}] OPEN PRICE SET from OHLC: {open_price:.2f} (prev close: {stock.previous_close:.2f})")
-
-                        # Validate gap immediately when we get opening price (9:16)
-                        stock.validate_gap()
-                        return True  # Found and processed the correct candle
+                    # Only update high/low tracking, opening price already set from IEP
+                    if high_price > 0:
+                        stock.daily_high = max(stock.daily_high, high_price)
+                    if low_price > 0:
+                        stock.daily_low = min(stock.daily_low, low_price)
+                    
+                    logger.info(f"[{symbol}] Updated tracking: High={stock.daily_high:.2f}, Low={stock.daily_low:.2f}")
+                    return True  # Found and processed the correct candle
 
         return False  # Didn't find the right candle yet
 

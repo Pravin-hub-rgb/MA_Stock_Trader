@@ -132,3 +132,22 @@ Do this tomorrow at 9:14:30 — you will get the correct opening price for gap v
 
 
 we can remove the complex modular stuff fit
+
+
+
+import requests
+
+def get_opening_price(access_token, instrument_key):
+    url = f"https://api.upstox.com/v2/market-quote/quotes?instrument_key={instrument_key}"
+    headers = {
+        "Accept": "application/json",
+        "Api-Version": "2.0",
+        "Authorization": f"Bearer {access_token}"
+    }
+    response = requests.get(url, headers=headers).json()
+    if response.get('status') == 'success':
+        data = response.get('data', {}).get(instrument_key, {})
+        price = data.get('ltp')
+        if price:
+            return float(price)
+    return None

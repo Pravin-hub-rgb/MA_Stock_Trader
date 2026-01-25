@@ -51,3 +51,6 @@ Downloads latest bhavcopy from NSE and integrates missing data into cache. Run a
 taskkill /f /im python.exe
 
 create a legit test script please not like this terminal stuff please
+
+make it modular okay we don't wanna make monolithic code okay create a separate script and import it to where it need
+if the code is long make sure to create folder like [relative name]_modules and at right directory too suppose you creating modules for upstox_fetcher so the modules folder should be in same directory as upstox_fetcher so its easy to import from those modules

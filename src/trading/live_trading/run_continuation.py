@@ -89,8 +89,9 @@ def run_continuation_bot():
     from simple_data_streamer import SimpleStockStreamer
 
     from volume_profile import volume_profile_calculator
-    from src.utils.upstox_fetcher import UpstoxFetcher
-    from config import MARKET_OPEN, ENTRY_TIME
+    from src.utils.upstox_fetcher import UpstoxFetcher, iep_manager
+    from src.trading.live_trading.continuation_modules.continuation_timing_module import ContinuationTimingManager
+    from config import MARKET_OPEN, ENTRY_TIME, PREP_START
 
     # Create components
     upstox_fetcher = UpstoxFetcher()
@@ -263,19 +264,54 @@ def run_continuation_bot():
             global_vah_dict = {}
             print("No continuation stocks to calculate VAH for")
 
-        # Wait for prep end (9:14:30)
-        prep_end = time(9, 14, 30)
+        # PRE-MARKET IEP FETCH SEQUENCE
+        print("=== PRE-MARKET IEP FETCH SEQUENCE ===")
+        
+        # Wait for PREP_START time (30 seconds before market open)
+        prep_start = PREP_START
         current_time = datetime.now(IST).time()
-
-        if current_time < prep_end:
-            prep_datetime = datetime.combine(datetime.now(IST).date(), prep_end)
+        
+        if current_time < prep_start:
+            prep_datetime = datetime.combine(datetime.now(IST).date(), prep_start)
             prep_datetime = IST.localize(prep_datetime)
             current_datetime = datetime.now(IST)
             wait_seconds = (prep_datetime - current_datetime).total_seconds()
             if wait_seconds > 0:
-                print(f"WAITING {wait_seconds:.0f} seconds until prep end...")
+                print(f"WAITING {wait_seconds:.0f} seconds until PREP_START ({prep_start})...")
                 time_module.sleep(wait_seconds)
-
+        
+        # Fetch IEP for all continuation stocks
+        print(f"FETCHING IEP for {len(symbols)} continuation stocks...")
+        iep_prices = iep_manager.fetch_iep_batch(symbols)
+        
+        if iep_prices:
+            print("IEP FETCH COMPLETED SUCCESSFULLY")
+            
+            # Set opening prices and run gap validation
+            for symbol, iep_price in iep_prices.items():
+                # Find stock by symbol
+                stock = None
+                for s in monitor.stocks.values():
+                    if s.symbol == symbol:
+                        stock = s
+                        break
+                
+                if stock:
+                    stock.set_open_price(iep_price)
+                    print(f"Set opening price for {symbol}: Rs{iep_price:.2f}")
+                    
+                    # Run gap validation immediately (at 9:14:30)
+                    if hasattr(stock, 'validate_gap'):
+                        stock.validate_gap()
+                        if stock.gap_validated:
+                            print(f"Gap validated for {symbol}")
+                        else:
+                            print(f"Gap validation failed for {symbol}")
+                else:
+                    print(f"Stock not found for symbol: {symbol}")
+        else:
+            print("IEP FETCH FAILED - FALLING BACK TO OHLC")
+        
         print("=== STARTING CONTINUATION TRADING PHASE ===")
 
         # Connect to data stream
@@ -298,9 +334,9 @@ def run_continuation_bot():
 
             print("MARKET OPEN! Monitoring live OHLC data...")
 
-            # For continuation: Pure OHLC processing
-            print("USING PURE OHLC PROCESSING - Opening prices from 1-min candles at 9:16")
-            print("Gap validation at 9:16, final qualification at 9:19")
+            # For continuation: IEP-based opening prices (already set at 9:14:30)
+            print("USING IEP-BASED OPENING PRICES - Set at 9:14:30 from pre-market IEP")
+            print("Gap validation completed at 9:14:30, ready for trading")
 
             # Continue with normal entry decision timing
             entry_decision_time = ENTRY_TIME
@@ -341,6 +377,15 @@ def run_continuation_bot():
 
                 print(f"   {stock.symbol} ({situation_desc}): {open_status} | {gap_status} | {low_status} | {volume_status}{rejection_info}")
 
+            # Apply VAH validation for continuation stocks
+            print("=== APPLYING VAH VALIDATION ===")
+            if global_vah_dict:
+                for stock in monitor.stocks.values():
+                    if stock.situation == 'continuation' and stock.symbol in global_vah_dict:
+                        vah_price = global_vah_dict[stock.symbol]
+                        if hasattr(stock, 'validate_vah_rejection'):
+                            stock.validate_vah_rejection(vah_price)
+            
             monitor.prepare_entries()
 
             qualified_stocks = monitor.get_qualified_stocks()
