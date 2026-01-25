@@ -79,13 +79,13 @@ class StockClassifier:
                     print(f"Warning: Invalid trend {trend} in {entry}, expected 'u' or 'd'")
                     continue
 
-                # Classify situation based on priority system
+                # Classify situation based on simplified trend logic
                 if days >= 7:
-                    situation = 'reversal_vip'  # 7+ days, any trend (elite)
-                elif trend == 'd':
-                    situation = 'reversal_secondary'  # 3-6 days, downtrend
-                else:  # trend == 'u'
-                    situation = 'reversal_tertiary'  # 3-6 days, uptrend
+                    situation = 'reversal_s2'  # 7+ days, any trend = OOPS
+                elif trend == 'u':
+                    situation = 'reversal_s1'  # 3-6 days, uptrend = Strong Start
+                else:  # trend == 'd'
+                    situation = 'reversal_s2'  # 3-6 days, downtrend = OOPS
 
                 symbols.append(symbol)
                 situations[symbol] = situation
@@ -109,12 +109,10 @@ class StockClassifier:
 
             for symbol, situation in situations.items():
                 trend, days = symbol_details.get(symbol, ('?', 0))
-                if situation == 'reversal_vip':
-                    desc = f"7+ days ({trend}{days}) - ELITE VIP"
-                elif situation == 'reversal_secondary':
-                    desc = f"3-6 days + downtrend ({trend}{days})"
-                else:  # reversal_tertiary
-                    desc = f"3-6 days + uptrend ({trend}{days})"
+                if situation == 'reversal_s1':
+                    desc = f"Strong Start ({trend}{days}) - 3-6 days uptrend"
+                else:  # reversal_s2
+                    desc = f"OOPS ({trend}{days}) - {days} days {'any trend' if days >= 7 else 'downtrend'}"
                 print(f"   {symbol}: {desc}")
 
             return symbols, situations

@@ -29,7 +29,7 @@ MAX_STOCKS_TO_TRADE = 2        # Maximum stocks to trade
 QUALITY_SCORE_THRESHOLD = 15   # Minimum quality score for selection
 
 # Volume validation (SVRO system)
-SVRO_MIN_VOLUME_RATIO = 0.05   # 5% minimum relative volume for SVRO
+SVRO_MIN_VOLUME_RATIO = 0.075  # 7.5% minimum relative volume for SVRO (Manas requirement)
 SVRO_VOLUME_BASELINE_DAYS = 20 # Days to calculate volume baseline
 
 # Logging

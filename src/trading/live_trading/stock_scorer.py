@@ -92,7 +92,7 @@ class StockScorer:
             if not cached_data.empty and len(cached_data) >= 10:
                 # Use last 10 days average
                 avg_volume = cached_data['volume'].tail(10).mean()
-                return max(avg_volume, 500000)  # Minimum 5 lakh
+                return avg_volume  # Return actual average volume
             else:
                 return 1000000  # Scanner minimum
         except:

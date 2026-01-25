@@ -20,3 +20,10 @@ No, SVRO is primarily for **continuations** in uptrending stocks showing relativ
 That said, your point about the 2022 bootcamp is spot on: For **mean reversion/reversals**, he advocates buying after a gap down as "enough confirmation" of stretch/exhaustion (the "rubber band" snapping back), especially in oversold stocks down 15%+ over 3-8 days. This ties into his OOPS reversal (gap down then quick cross above prior close), which is separate from SVRO. SVRO's gap up requirement makes it incompatible with reversal gap downs—it's for bullish resumption, not bottom-fishing.
 
 If your bot is for reversals, stick to the bootcamp logic (gap down + big red bar → breakout). SVRO could complement for continuations in your scanner, but they're distinct. If he evolves it (e.g., a bearish version), nothing recent shows that.
+
+
+---
+Manas Also Talks about that the low shouldn't breach the prev close too
+so either 1% and this 1% tolerance also shouldn't breach the prev close
+
+- in first 3 min we should have 7.5% relative volume (for continuation SS SVRO)

@@ -32,7 +32,7 @@ class ReversalStockState:
         self.symbol = symbol
         self.instrument_key = instrument_key
         self.previous_close = previous_close
-        self.situation = situation  # 'reversal_s1', 'reversal_s2', 'reversal_vip', 'reversal_tertiary'
+        self.situation = situation  # 'reversal_s1' (Strong Start), 'reversal_s2' (OOPS)
 
         # Market data
         self.open_price: Optional[float] = None
@@ -102,14 +102,7 @@ class ReversalStockState:
             if gap_pct < -0.05:
                 self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
                 return False
-        elif self.situation in ['reversal_vip', 'reversal_tertiary']:
-            # For reversal VIP and tertiary - gap down required (-5% to 0%)
-            if gap_pct > 0:
-                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for {self.situation})")
-                return False
-            if gap_pct < -0.05:
-                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
-                return False
+        # No longer needed - all reversal_s2 are OOPS (gap down)
         else:
             self.reject(f"Unknown situation: {self.situation}")
             return False
@@ -129,7 +122,7 @@ class ReversalStockState:
         if self.situation == 'reversal_s1':
             # Gap up stocks are Strong Start candidates
             return "Strong Start" if gap_pct > 0 else "FLAT"
-        elif self.situation in ['reversal_s2', 'reversal_vip', 'reversal_tertiary']:
+        else:  # reversal_s2
             # Gap down stocks are OOPS candidates
             return "OOPS" if gap_pct < 0 else "FLAT"
         
