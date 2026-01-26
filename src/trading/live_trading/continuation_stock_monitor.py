@@ -442,7 +442,7 @@ class StockMonitor:
         parent_dir = os.path.dirname(os.path.dirname(__file__))
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
-        from trading.live_trading.stock_scorer import stock_scorer
+        from src.trading.live_trading.stock_scorer import stock_scorer
 
         for stock in self.get_active_stocks():
             if (stock.situation == 'continuation' and stock.gap_validated and
