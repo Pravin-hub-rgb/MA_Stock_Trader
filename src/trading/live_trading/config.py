@@ -22,6 +22,7 @@ MAX_POSITIONS = 2              # Maximum concurrent positions
 ENTRY_SL_PCT = 0.04            # 4% stop loss below entry
 LOW_VIOLATION_PCT = 0.01       # 1% low violation threshold
 STRONG_START_GAP_PCT = 0.02    # 2% gap up for Strong Start
+FLAT_GAP_THRESHOLD = 0.003     # 0.3% flat gap threshold (±0.3% considered flat)
 
 # Selection parameters
 MAX_STOCKS_TO_SELECT = 2       # Maximum stocks to select for trading

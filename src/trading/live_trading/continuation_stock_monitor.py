@@ -18,7 +18,8 @@ from config import (
     MARKET_OPEN,
     PREP_START,
     LOW_VIOLATION_PCT,
-    ENTRY_SL_PCT
+    ENTRY_SL_PCT,
+    FLAT_GAP_THRESHOLD
 )
 
 logger = logging.getLogger(__name__)
@@ -89,29 +90,29 @@ class StockState:
 
         gap_pct = (self.open_price - self.previous_close) / self.previous_close
 
+        # Check if gap is within flat range (reject)
+        if abs(gap_pct) <= FLAT_GAP_THRESHOLD:
+            self.reject(f"Gap too flat: {gap_pct:.1%} (within ±{FLAT_GAP_THRESHOLD:.1%} range)")
+            return False
+
+        # Situation-specific gap requirements
         if self.situation in ['continuation', 'reversal_s1']:
-            # Gap up required (0-5%)
-            if gap_pct < 0:
-                self.reject(f"Gap down: {gap_pct:.1%} (need gap up for {self.situation})")
+            # Need gap up > flat threshold, but not too high
+            if gap_pct <= FLAT_GAP_THRESHOLD:
+                self.reject(f"Gap down or flat: {gap_pct:.1%} (need gap up > {FLAT_GAP_THRESHOLD:.1%} for {self.situation})")
                 return False
             if gap_pct > 0.05:
                 self.reject(f"Gap up too high: {gap_pct:.1%} > 5%")
                 return False
         elif self.situation == 'reversal_s2':
-            # Gap down required (-5% to 0%)
-            if gap_pct > 0:
-                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for reversal_s2)")
-                return False
-            if gap_pct < -0.05:
-                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
+            # Need gap down < -flat threshold (no lower limit)
+            if gap_pct >= -FLAT_GAP_THRESHOLD:
+                self.reject(f"Gap up or flat: {gap_pct:.1%} (need gap down < -{FLAT_GAP_THRESHOLD:.1%} for reversal_s2)")
                 return False
         elif self.situation in ['reversal_vip', 'reversal_tertiary']:
-            # For reversal VIP and tertiary - gap down required (-5% to 0%)
-            if gap_pct > 0:
-                self.reject(f"Gap up: {gap_pct:.1%} (need gap down for {self.situation})")
-                return False
-            if gap_pct < -0.05:
-                self.reject(f"Gap down too low: {gap_pct:.1%} < -5%")
+            # Same as reversal_s2 - gap down required
+            if gap_pct >= -FLAT_GAP_THRESHOLD:
+                self.reject(f"Gap up or flat: {gap_pct:.1%} (need gap down < -{FLAT_GAP_THRESHOLD:.1%} for {self.situation})")
                 return False
         else:
             self.reject(f"Unknown situation: {self.situation}")
