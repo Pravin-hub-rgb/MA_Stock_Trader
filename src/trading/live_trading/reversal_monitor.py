@@ -227,7 +227,7 @@ class ReversalMonitor:
             parent_dir = os.path.dirname(os.path.dirname(__file__))
             if parent_dir not in sys.path:
                 sys.path.insert(0, parent_dir)
-            from src.scanner.stock_scorer import stock_scorer
+            from src.trading.live_trading.stock_scorer import stock_scorer
 
             # Get all symbols to rank
             all_symbols = []
@@ -272,9 +272,9 @@ class ReversalMonitor:
                 if stock.symbol == symbol:
                     stock.quality_rank = rank
                     stock.quality_score = total_score
-                    stock.adr_percent = score_data['adr_pct']
-                    stock.current_price = score_data['price']
-                    print(f"  {category_name} #{rank}: {symbol} (Score: {total_score}, ADR: {score_data['adr_pct']:.1f}%)")
+                    stock.adr_percent = score_data['adr_percent']
+                    stock.current_price = score_data['current_price']
+                    print(f"  {category_name} #{rank}: {symbol} (Score: {total_score}, ADR: {score_data['adr_percent']:.1f}%)")
                     break
 
     def check_oops_trigger(self, symbol: str, open_price: float, prev_close: float, current_price: float) -> bool:

@@ -175,7 +175,7 @@ def setup_reversal_data():
     print("\n4. 📈 Testing Stock Scoring...")
 
     try:
-        from scanner.stock_scorer import stock_scorer
+        from trading.live_trading.stock_scorer import stock_scorer
 
         # Test scoring for reversal stocks
         test_symbols = ['AVANTEL', 'ELECON', 'GODREJPROP']
