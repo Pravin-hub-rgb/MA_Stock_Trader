@@ -3,6 +3,9 @@
 """
 Reversal Trading Bot - API-based Opening Prices
 Dedicated bot for OOPS reversal trading using official opening prices from API
+
+MODULAR ARCHITECTURE: Uses reversal_modules for state management, tick processing,
+and subscription management to eliminate cross-contamination bugs.
 """
 
 import sys
@@ -19,6 +22,10 @@ sys.path.insert(0, 'src')
 # Configure logging to show detailed VAH calculation info
 # Use print statements instead of logging for UI compatibility
 # logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
+
+# Import modular architecture
+from reversal_modules.integration import ReversalIntegration
+from reversal_modules.subscription_manager import safe_unsubscribe
 
 def kill_duplicate_processes():
     """Kill any other instances of reversal bot"""
@@ -76,6 +83,7 @@ def cleanup_singleton_lock():
 def run_reversal_bot():
     """Run the reversal trading bot using API-based opening prices"""
 
+    print("=== TOP LEVEL DEBUGGING START ===")
     print("STARTING REVERSAL TRADING BOT (API-BASED OPENING PRICES)")
     print("=" * 55)
 
@@ -83,7 +91,6 @@ def run_reversal_bot():
     sys.path.insert(0, 'src/trading/live_trading')
 
     from reversal_stock_monitor import ReversalStockMonitor
-    from reversal_monitor import ReversalMonitor
     from rule_engine import RuleEngine
     from selection_engine import SelectionEngine
     from paper_trader import PaperTrader
@@ -96,7 +103,6 @@ def run_reversal_bot():
     # Create components
     upstox_fetcher = UpstoxFetcher()
     monitor = ReversalStockMonitor()
-    reversal_monitor = ReversalMonitor()
     rule_engine = RuleEngine()
     selection_engine = SelectionEngine()
     paper_trader = PaperTrader()
@@ -156,6 +162,22 @@ def run_reversal_bot():
 
     # Initialize data streamer
     data_streamer = SimpleStockStreamer(instrument_keys, stock_symbols)
+
+    # CREATE INTEGRATION EARLY (needed for unsubscribe phases)
+    # Create modular integration BEFORE gap validation
+    integration = ReversalIntegration(data_streamer, monitor, paper_trader)
+
+    # Reversal tick handler - simplified with modular architecture
+    def tick_handler_reversal(instrument_key, symbol, price, timestamp, ohlc_list=None):
+        """
+        Simplified reversal tick handler using modular architecture
+        Delegates all logic to individual stocks based on their state
+        """
+        # Use modular integration for tick processing
+        integration.simplified_tick_handler(instrument_key, symbol, price, timestamp, ohlc_list, monitor)
+
+    # Set the reversal tick handler
+    data_streamer.tick_handler = tick_handler_reversal
 
     # PRE-MARKET IEP FETCH SEQUENCE (Priority 1 Fix)
     print("=== PRE-MARKET IEP FETCH SEQUENCE ===")
@@ -228,128 +250,22 @@ def run_reversal_bot():
         print("IEP FETCH FAILED - MANUAL OPENING PRICE CAPTURE REQUIRED")
         print("WARNING: Opening prices will need to be set manually or via alternative method")
 
-    # Reversal tick handler - ticks for monitoring only (opening prices from API)
-    def tick_handler_reversal(instrument_key, symbol, price, timestamp, ohlc_list=None):
-        """Reversal tick handler - ticks for monitoring/triggers only"""
-        global global_selected_stocks, global_selected_symbols
-
-        # LOG ACTUAL TICK PRICE AND TIME (removed to reduce spam)
-
-        monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
-
-        # Get stock for processing
-        stock = monitor.stocks.get(instrument_key)
-        if not stock:
-            return
-
-        # Process OOPS reversal logic (only if opening price is available from API)
-        if stock and stock.situation == 'reversal_s2':
-            # Check OOPS reversal conditions
-            if reversal_monitor.check_oops_trigger(symbol, stock.open_price, stock.previous_close, price):
-                if not stock.oops_triggered:
-                    stock.oops_triggered = True
-                    print(f"TARGET {symbol}: OOPS reversal triggered - gap down + prev close cross")
-                    # Enter position immediately for OOPS
-                    stock.entry_high = price
-                    stock.entry_sl = price * 0.96  # 4% SL
-                    stock.enter_position(price, timestamp)
-                    paper_trader.log_entry(stock, price, timestamp)
-
-        # Check violations for opened stocks (continuous monitoring)
-        monitor.check_violations()
-
-        # Prepare entries for newly qualified stocks
-        qualified_stocks = monitor.get_qualified_stocks()
-        for stock in qualified_stocks:
-            if not stock.entry_ready:
-                # This stock just got qualified, prepare entry levels
-                monitor.prepare_entries()  # This will set entry levels for all qualified stocks
-                # Re-get qualified stocks to include the newly prepared ones
-                qualified_stocks = monitor.get_qualified_stocks()
-                global_selected_stocks = selection_engine.select_stocks(qualified_stocks)
-                global_selected_symbols = {stock.symbol for stock in global_selected_stocks}
-
-                for sel_stock in global_selected_stocks:
-                    if not sel_stock.entry_ready:
-                        sel_stock.entry_ready = True
-                        gap_pct = ((sel_stock.open_price-sel_stock.previous_close)/sel_stock.previous_close*100)
-                        candidate_type = sel_stock.get_candidate_type()
-                        print(f"OK {sel_stock.symbol} qualified as {candidate_type} - Gap: {gap_pct:+.1f}% | Entry: Rs{sel_stock.entry_high:.2f} | SL: Rs{sel_stock.entry_sl:.2f}")
-                break  # Only do this once per tick to avoid spam
-
-        # Check entry signals only after entry time (only for selected stocks)
-        current_time = datetime.now(IST).time()
-        if current_time >= ENTRY_TIME and global_selected_stocks:
-            entry_signals = monitor.check_entry_signals()
-
-            for stock in entry_signals:
-                if stock.symbol in global_selected_symbols:  # Only allow selected stocks to enter
-                    print(f"ENTRY {stock.symbol} entry triggered at Rs{price:.2f}, SL placed at Rs{stock.entry_sl:.2f}")
-                    stock.enter_position(price, timestamp)
-                    paper_trader.log_entry(stock, price, timestamp)
-
-            # Check Strong Start entry signals for reversal_s1
-            for stock in monitor.stocks.values():
-                if stock.symbol in global_selected_symbols and stock.situation in ['reversal_s1']:
-                    # Check Strong Start conditions
-                    if reversal_monitor.check_strong_start_trigger(stock.symbol, stock.open_price, stock.previous_close, stock.daily_low):
-                        if not stock.strong_start_triggered:
-                            stock.strong_start_triggered = True
-                            print(f"TARGET {stock.symbol}: Strong Start triggered - gap up + open≈low")
-                            # Enter position for Strong Start
-                            stock.entry_high = price
-                            stock.entry_sl = price * 0.96  # 4% SL
-                            stock.enter_position(price, timestamp)
-                            paper_trader.log_entry(stock, price, timestamp)
-
-        # Check trailing stops and exit signals for entered positions
-        if current_time >= ENTRY_TIME:
-            # Check for trailing stop adjustments (5% profit -> move SL to entry)
-            for stock in monitor.stocks.values():
-                if stock.entered and stock.entry_price and stock.current_price:
-                    profit_pct = (stock.current_price - stock.entry_price) / stock.entry_price
-                    if profit_pct >= 0.05:  # 5% profit
-                        new_sl = stock.entry_price  # Move SL to breakeven
-                        if stock.entry_sl < new_sl:
-                            old_sl = stock.entry_sl
-                            stock.entry_sl = new_sl
-                            print(f"TRAILING {stock.symbol} trailing stop adjusted: Rs{old_sl:.2f} -> Rs{new_sl:.2f} (5% profit)")
-
-            # Check exit signals (including updated trailing stops)
-            exit_signals = monitor.check_exit_signals()
-            for stock in exit_signals:
-                pnl = (price - stock.entry_price) / stock.entry_price * 100
-                print(f"EXIT {stock.symbol} exited at Rs{price:.2f}, PNL: {pnl:+.2f}%")
-                stock.exit_position(price, timestamp, "Stop Loss Hit")
-                paper_trader.log_exit(stock, price, timestamp, "Stop Loss Hit")
-
-        # Position status logging removed to reduce tick spam
-
-    # Set the reversal tick handler
-    data_streamer.tick_handler = tick_handler_reversal
-    global_selected_stocks = []
-    global_selected_symbols = set()
-
-    print("\n=== REVERSAL BOT INITIALIZED ===")
-    print("Using API-based opening prices with tick monitoring")
+    # PHASE 1: UNSUBSCRIBE GAP-REJECTED STOCKS
+    # This happens immediately after gap validation at 12:31:30
+    integration.phase_1_unsubscribe_after_gap_validation()
     print()
 
     try:
         # PREP TIME: Load metadata and prepare data
         print("=== PREP TIME: Loading metadata and preparing data ===")
 
-        # Load stock scoring metadata (ADR, volume baselines, etc.)
-        from src.trading.live_trading.stock_scorer import stock_scorer
-        stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
-        print("OK Stock metadata loaded for scoring")
+        #  REMOVED: Skip stock scoring metadata loading for pure first-come-first-serve
+        # Classification (S1 vs S2) is already handled by StockClassifier
+        # No ADR, price, or volume scoring needed for first-come-first-serve logic
 
-        # Load reversal watchlist
-        reversal_list_path = "src/trading/reversal_list.txt"
-        if reversal_monitor.load_watchlist(reversal_list_path):
-            print("OK Reversal watchlist loaded")
-            reversal_monitor.rank_stocks_by_quality()
-        else:
-            print("WARNING: Could not load reversal watchlist")
+        #  REMOVED: Skip reversal monitor watchlist loading for pure first-come-first-serve
+        # Stock classification (S1 vs S2) is already handled by StockClassifier
+        # No VIP/Secondary/Tertiary classification or quality ranking needed
 
         # Wait for market open (no prep end needed)
         current_time = datetime.now(IST).time()
@@ -386,7 +302,18 @@ def run_reversal_bot():
 
             print("MARKET OPEN! Monitoring live tick data...")
 
-            # Continue with normal entry timing
+            # MARKET OPEN: Make OOPS stocks ready immediately
+            print("\n=== MARKET OPEN: Making OOPS stocks ready ===")
+            active_stocks = monitor.get_active_stocks()
+            oops_stocks = [stock for stock in active_stocks if stock.situation == 'reversal_s2' and stock.gap_validated]
+            
+            for stock in oops_stocks:
+                stock.entry_ready = True
+                print(f"READY to trade: {stock.symbol} - OOPS (Trigger: Rs{stock.previous_close:.2f})")
+            
+            print(f"OOPS stocks ready: {len(oops_stocks)}")
+
+            # Continue with normal entry timing for Strong Start stocks
             entry_time = ENTRY_TIME
             current_time = datetime.now(IST).time()
 
@@ -402,9 +329,10 @@ def run_reversal_bot():
             # Prepare entries and select stocks
             print("\n=== PREPARING ENTRIES ===")
 
-            # Show current status after reversal qualification
+            # Show current status after reversal qualification (only actively monitored stocks)
             print("POST-REVERSAL QUALIFICATION STATUS:")
-            for stock in monitor.stocks.values():
+            active_stocks = monitor.get_active_stocks()
+            for stock in active_stocks:
                 open_status = f"Open: Rs{stock.open_price:.2f}" if stock.open_price else "No opening price"
 
                 gap_pct = 0.0
@@ -427,21 +355,38 @@ def run_reversal_bot():
 
                 print(f"   {stock.symbol} ({situation_desc}): {open_status} | {gap_status} | {low_status}{rejection_info}")
 
+            print("About to call monitor.prepare_entries()")
             monitor.prepare_entries()
+            print("monitor.prepare_entries() completed")
+
+            # PHASE 2: CHECK LOW VIOLATIONS AND UNSUBSCRIBE
+            # This happens at entry time (12:33:00) before preparing entries
+            integration.phase_2_unsubscribe_after_low_violation()
 
             qualified_stocks = monitor.get_qualified_stocks()
             print(f"Qualified stocks: {len(qualified_stocks)}")
 
-            selected_stocks = selection_engine.select_stocks(qualified_stocks)
-            print(f"Selected stocks: {[s.symbol for s in selected_stocks]}")
+            # SKIP SELECTION PHASE - Keep all qualified stocks subscribed for first-come-first-serve
+            # All qualified stocks stay subscribed until both positions are filled
+            print(f"All {len(qualified_stocks)} qualified stocks remain subscribed for first-come-first-serve")
 
-            # Mark selected stocks as ready
-            for stock in selected_stocks:
+            # Mark all qualified stocks as ready (no selection)
+            for stock in qualified_stocks:
+                # OOPS stocks are already ready from market open
+                if stock.situation == 'reversal_s2':
+                    continue  # Already marked as ready above
+                
                 stock.entry_ready = True
-                print(f"READY to trade: {stock.symbol} (Entry: Rs{stock.entry_high:.2f}, SL: Rs{stock.entry_sl:.2f})")
+                
+                if stock.situation == 'reversal_s1':
+                    # Strong Start has entry_high and entry_sl
+                    print(f"READY to trade: {stock.symbol} - Strong Start (High: Rs{stock.daily_high:.2f}, Low: Rs{stock.daily_low:.2f})")
+                else:
+                    # Fallback for unknown situations
+                    print(f"READY to trade: {stock.symbol}")
 
-            # Initialize selected_stocks for the tick handler
-            global_selected_symbols = {stock.symbol for stock in selected_stocks}
+            # Initialize selected_stocks for the tick handler (all qualified stocks)
+            global_selected_symbols = {stock.symbol for stock in qualified_stocks}
 
             # Keep monitoring for entries, exits, and trailing stops
             print("\nMONITORING for entry/exit signals...")
@@ -457,6 +402,18 @@ def run_reversal_bot():
 
     # Cleanup
     print("\n=== CLEANUP ===")
+    
+    # Show final high/low values for Strong Start candidates
+    print("FINAL HIGH/LOW VALUES FOR STRONG START CANDIDATES:")
+    active_stocks = monitor.get_active_stocks()
+    ss_stocks = [stock for stock in active_stocks if stock.situation == 'reversal_s1']
+    
+    if ss_stocks:
+        for stock in ss_stocks:
+            print(f"   {stock.symbol}: High: Rs{stock.daily_high:.2f}, Low: Rs{stock.daily_low:.2f}")
+    else:
+        print("   No Strong Start candidates active")
+    
     summary = monitor.get_summary()
     paper_trader.log_session_summary(summary)
     paper_trader.export_trades_csv()

@@ -34,7 +34,7 @@ def update_all_stocks_with_bhavcopy(target_date=None):
         print(f"\n⏱️  Total time: {duration}")
 
         if 'error' not in result:
-            print("✅ Bhavcopy update completed successfully!")
+            print(" Bhavcopy update completed successfully!")
             print(f"   Total stocks in bhavcopy: {result['total_stocks']}")
             print(f"   Stocks updated: {result['updated']}")
             if result['errors'] > 0:

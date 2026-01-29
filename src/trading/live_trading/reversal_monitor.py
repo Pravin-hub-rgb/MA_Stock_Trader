@@ -205,12 +205,12 @@ class ReversalMonitor:
             return False
             
         # Import config to get configurable Strong Start gap percentage
-        from .config import STRONG_START_GAP_PCT
+        from .config import FLAT_GAP_THRESHOLD
         
         gap_pct = ((stock.open_price - stock.prev_close) / stock.prev_close) * 100
         open_equals_low = abs(stock.open_price - current_low) / stock.open_price <= 0.01
         
-        if gap_pct >= (STRONG_START_GAP_PCT * 100) and open_equals_low:
+        if gap_pct >= (FLAT_GAP_THRESHOLD * 100) and open_equals_low:
             print(f"{stock.symbol}: Strong Start conditions met! Gap: {gap_pct:.2f}%, Open≈Low: ₹{current_low:.2f}")
             return True
         return False
@@ -318,10 +318,10 @@ class ReversalMonitor:
             return False
 
         # Import config to get configurable Strong Start gap percentage
-        from .config import STRONG_START_GAP_PCT
+        from .config import FLAT_GAP_THRESHOLD
         
         # Condition 1: Gap up (configurable percentage above prev close)
-        gap_up = open_price > (prev_close * (1.0 + STRONG_START_GAP_PCT))
+        gap_up = open_price > (prev_close * (1.0 + FLAT_GAP_THRESHOLD))
 
         # Condition 2: Open ≈ low within 1%
         open_equals_low = abs(open_price - current_low) / open_price <= 0.01

@@ -223,6 +223,17 @@ def run_continuation_bot():
         from stock_scorer import stock_scorer
         stock_scorer.preload_metadata(list(prev_closes.keys()), prev_closes)
         print("OK Stock metadata loaded for scoring")
+        
+        # Get mean volume baselines from cache during PREP time
+        print("LOADING mean volume baselines from cache...")
+        for stock in monitor.stocks.values():
+            try:
+                metadata = stock_scorer.stock_metadata.get(stock.symbol, {})
+                volume_baseline = metadata.get('volume_baseline', 1000000)
+                stock.volume_baseline = volume_baseline
+                print(f"Mean volume baseline for {stock.symbol}: {volume_baseline:,}")
+            except Exception as e:
+                print(f"ERROR loading mean volume baseline for {stock.symbol}: {e}")
 
         # Calculate VAH from previous day's volume profile
         print("Calculating VAH from previous day's volume profile...")
@@ -334,6 +345,19 @@ def run_continuation_bot():
 
             print("MARKET OPEN! Monitoring live OHLC data...")
 
+            # Capture initial volume at market open for cumulative tracking
+            print("CAPTURING initial volume at market open for cumulative tracking...")
+            for stock in monitor.stocks.values():
+                try:
+                    initial_volume = upstox_fetcher.get_current_volume(stock.symbol)
+                    if initial_volume > 0:
+                        stock.initial_volume = initial_volume
+                        print(f"Initial volume captured for {stock.symbol}: {initial_volume:,}")
+                    else:
+                        print(f"WARNING: No initial volume for {stock.symbol}")
+                except Exception as e:
+                    print(f"ERROR capturing initial volume for {stock.symbol}: {e}")
+
             # For continuation: IEP-based opening prices (already set at 9:14:30)
             print("USING IEP-BASED OPENING PRICES - Set at 9:14:30 from pre-market IEP")
             print("Gap validation completed at 9:14:30, ready for trading")
@@ -365,7 +389,16 @@ def run_continuation_bot():
 
                 gap_status = "Gap validated" if stock.gap_validated else f"Gap: {gap_pct:+.2f}%"
                 low_status = "Low checked" if stock.low_violation_checked else "Low not checked"
-                volume_status = "Volume validated" if stock.volume_validated else "Volume not checked"
+                # Format volume status with detailed information
+                if stock.volume_validated and stock.early_volume and stock.volume_baseline:
+                    # Calculate volume ratio for display
+                    volume_ratio = (stock.early_volume / stock.volume_baseline * 100) if stock.volume_baseline > 0 else 0
+                    # Format volume numbers with K suffix
+                    cumulative_vol_str = f"{stock.early_volume/1000:.1f}K" if stock.early_volume >= 1000 else f"{stock.early_volume:,}"
+                    baseline_vol_str = f"{stock.volume_baseline/1000:.1f}K" if stock.volume_baseline >= 1000 else f"{stock.volume_baseline:,}"
+                    volume_status = f"Volume validated {volume_ratio:.1f}% ({cumulative_vol_str}) >= 7.5% of ({baseline_vol_str})"
+                else:
+                    volume_status = "Volume not checked"
 
                 situation_desc = {
                     'continuation': 'Cont',

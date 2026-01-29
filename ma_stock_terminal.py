@@ -46,7 +46,7 @@ def get_scan_date() -> date:
 def display_continuation_results(results: List[Dict]):
     """Display continuation scan results in clean terminal format"""
     if not results:
-        print("\n❌ No stocks met continuation criteria")
+        print("\n  No stocks met continuation criteria")
         return
     
     print(f"\n=== CONTINUATION SCANNER RESULTS ===")
@@ -65,8 +65,8 @@ def display_continuation_results(results: List[Dict]):
             adr = "N/A"
         else:
             adr = f"{adr_value:.2f}%"
-        ma_status = "✅ Rising"
-        volume = "✅ Confirmed"
+        ma_status = " Rising"
+        volume = " Confirmed"
         notes = result.get('notes', '')
         
         print(f"{symbol:<12} {price:<12} {adr:<8} {ma_status:<15} {volume:<10} {notes}")
@@ -74,7 +74,7 @@ def display_continuation_results(results: List[Dict]):
 def run_continuation_scan():
     """Run continuation scan with clean output"""
     scan_date = get_scan_date()
-    print(f"🔍 Running Continuation Scan for {scan_date}...")
+    print(f" Running Continuation Scan for {scan_date}...")
     print("Criteria: Price ₹100-2000, ADR > 3%, Rising 20MA, 1M+ volume")
     
     try:
@@ -82,7 +82,7 @@ def run_continuation_scan():
         display_continuation_results(results)
         return results
     except Exception as e:
-        print(f"❌ Error running continuation scan: {e}")
+        print(f"  Error running continuation scan: {e}")
         return []
 
 def prepare_data(args):
@@ -101,21 +101,21 @@ def prepare_data(args):
         summary = data_fetcher.prepare_market_data(days_back=days_back, max_stocks=max_stocks)
 
         if 'error' in summary:
-            print(f"\n❌ Data preparation failed: {summary['error']}")
+            print(f"\n  Data preparation failed: {summary['error']}")
             return
 
-        print(f"\n✅ Data preparation completed!")
+        print(f"\n Data preparation completed!")
         print(f"📊 Total stocks processed: {summary['total_stocks']}")
         print(f"🔄 Updated: {summary['updated']}")
         print(f"⏭️  Skipped: {summary['skipped']}")
-        print(f"❌ Errors: {summary['errors']}")
+        print(f"  Errors: {summary['errors']}")
         print(f"📅 Total trading days added: {summary['total_days_added']}")
 
         if summary['updated'] > 0:
             print("\n💾 Cache updated with latest market data")
             print("🎯 Ready for scanning with fresh data!")
     except Exception as e:
-        print(f"\n❌ Error during data preparation: {e}")
+        print(f"\n  Error during data preparation: {e}")
 
 def main():
     """Main entry point with command line argument handling"""
@@ -142,17 +142,17 @@ def main():
     results = run_continuation_scan()
 
     if results:
-        print(f"\n✅ Scan completed successfully!")
+        print(f"\n Scan completed successfully!")
         print(f"Found {len(results)} potential continuation candidates")
     else:
         print("\nNo stocks met the continuation criteria")
         print("This is normal - market conditions may not favor continuation setups today")
 
     print("\nKey criteria checked:")
-    print("✅ Price range: ₹100-2000")
-    print("✅ ADR > 3% (volatility check)")
-    print("✅ Rising 20-day moving average")
-    print("✅ 1M+ volume in last month")
+    print(" Price range: ₹100-2000")
+    print(" ADR > 3% (volatility check)")
+    print(" Rising 20-day moving average")
+    print(" 1M+ volume in last month")
 
 if __name__ == "__main__":
     main()

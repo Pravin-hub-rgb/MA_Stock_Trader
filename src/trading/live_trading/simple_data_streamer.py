@@ -320,6 +320,23 @@ class SimpleStockStreamer:
         if not self.connected:
             print("Max reconnection attempts reached - stopping")
 
+    def unsubscribe(self, instrument_keys):
+        """
+        Unsubscribe from specific instruments
+        
+        Args:
+            instrument_keys: List of instrument keys to unsubscribe from
+        """
+        if not self.streamer:
+            return
+        
+        try:
+            self.streamer.unsubscribe(instrument_keys)
+            print(f"Unsubscribed from {len(instrument_keys)} instruments")
+        except Exception as e:
+            print(f"Unsubscribe error: {e}")
+            raise
+
     def disconnect(self):
         """Disconnect from WebSocket"""
         if self.streamer:

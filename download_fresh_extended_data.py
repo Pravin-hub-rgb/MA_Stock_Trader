@@ -15,7 +15,7 @@ def delete_all_cache():
     if cache_dir.exists():
         print(f"🗑️  Deleting cache directory: {cache_dir}")
         shutil.rmtree(cache_dir)
-        print("✅ Cache deleted")
+        print(" Cache deleted")
     else:
         print("ℹ️  No cache directory found")
 
@@ -40,7 +40,7 @@ def download_extended_data_for_all_stocks():
             max_stocks=5000     # All stocks (realistic limit)
         )
 
-        print("\n✅ DOWNLOAD COMPLETED")
+        print("\n DOWNLOAD COMPLETED")
         print("=" * 30)
 
         if 'error' in result:
@@ -66,7 +66,7 @@ def download_extended_data_for_all_stocks():
             print(f"   Estimated working days: ~{estimated_working}")
 
             if estimated_working >= 110:
-                print("   ✅ SUCCESS: Got 110+ working days!")
+                print("    SUCCESS: Got 110+ working days!")
                 print("   🎉 Continuation scanner will now work!")
                 return True
             else:

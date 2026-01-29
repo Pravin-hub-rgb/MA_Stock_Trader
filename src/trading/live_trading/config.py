@@ -8,8 +8,8 @@ Real market trading configuration - no simulation or test modes
 from datetime import time, timedelta, datetime
 
 # Market timing (IST)
-MARKET_OPEN = time(17, 6)      # 9:15 AM market open (IST is UTC+5:30, so 13:24 IST = 9:15 AM)
-WINDOW_LENGTH = 3             # Entry window length in minutes (45 minutes)
+MARKET_OPEN = time(20, 17)      
+WINDOW_LENGTH = 1             
 PREP_START = (datetime.combine(datetime.today(), MARKET_OPEN) - timedelta(seconds=30)).time()  # 30 seconds before market open
 ENTRY_TIME = (datetime.combine(datetime.today(), MARKET_OPEN) + timedelta(minutes=WINDOW_LENGTH)).time()  # MARKET_OPEN + WINDOW_LENGTH
 
@@ -21,8 +21,8 @@ API_RETRY_DELAY_SECONDS = 30   # Retry failed API calls after 30 seconds
 MAX_POSITIONS = 2              # Maximum concurrent positions
 ENTRY_SL_PCT = 0.04            # 4% stop loss below entry
 LOW_VIOLATION_PCT = 0.01       # 1% low violation threshold
-STRONG_START_GAP_PCT = 0.02    # 2% gap up for Strong Start
 FLAT_GAP_THRESHOLD = 0.003     # 0.3% flat gap threshold (±0.3% considered flat)
+TRAILING_SL_THRESHOLD = 0.05   # 5% profit threshold for trailing stop to breakeven
 
 # Selection parameters
 MAX_STOCKS_TO_SELECT = 2       # Maximum stocks to select for trading
@@ -31,7 +31,7 @@ QUALITY_SCORE_THRESHOLD = 15   # Minimum quality score for selection
 
 # Volume validation (SVRO system)
 SVRO_MIN_VOLUME_RATIO = 0.075  # 7.5% minimum relative volume for SVRO (Manas requirement)
-SVRO_VOLUME_BASELINE_DAYS = 20 # Days to calculate volume baseline
+SVRO_VOLUME_BASELINE_DAYS = 10 # Days to calculate volume baseline
 
 # Logging
 LOG_LEVEL = 'INFO'             # Logging level
@@ -59,4 +59,4 @@ print(f"CONFIG: API poll delay: {API_POLL_DELAY_SECONDS} seconds")
 print(f"CONFIG: Max positions: {MAX_POSITIONS}")
 print(f"CONFIG: Entry SL: {ENTRY_SL_PCT*100}%")
 print(f"CONFIG: Low violation: {LOW_VIOLATION_PCT*100}%")
-print(f"CONFIG: Strong start gap: {STRONG_START_GAP_PCT*100}%")
+print(f"CONFIG: Strong start gap: {FLAT_GAP_THRESHOLD*100}%")

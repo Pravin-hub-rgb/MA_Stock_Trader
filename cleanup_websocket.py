@@ -57,7 +57,7 @@ def cleanup_websocket_sessions():
 
                 # Attempt to disconnect (sends close signal to server)
                 streamer.disconnect()
-                print(f"✅ Disconnect signal sent for {app_name}")
+                print(f" Disconnect signal sent for {app_name}")
 
             except Exception as e:
                 print(f"⚠️ Disconnect attempt failed for {app_name}: {e}")
@@ -66,7 +66,7 @@ def cleanup_websocket_sessions():
         print(f"\n⏳ Waiting 5 seconds for server to process disconnects...")
         time.sleep(5)
 
-        print("✅ Cleanup complete!")
+        print(" Cleanup complete!")
         print("\n📋 Next Steps:")
         print("1. Wait 10-15 minutes for server-side session cleanup")
         print("2. Regenerate fresh access tokens if needed")

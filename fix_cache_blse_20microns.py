@@ -54,7 +54,7 @@ def fix_missing_stocks():
             # Update cache
             cache_manager.update_with_bhavcopy(symbol, cache_df)
 
-            print(f"✅ Successfully updated {symbol} cache")
+            print(f" Successfully updated {symbol} cache")
             print(f"   OHLC: O:{ohlc['open']:.2f} H:{ohlc['high']:.2f} L:{ohlc['low']:.2f} C:{ohlc['close']:.2f}")
 
             # Verify

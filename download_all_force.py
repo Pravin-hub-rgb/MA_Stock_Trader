@@ -26,7 +26,7 @@ def force_download_all_stocks():
         print("❌ Failed to get NSE stocks list")
         return False
 
-    print(f"✅ Found {len(nse_stocks)} NSE stocks")
+    print(f" Found {len(nse_stocks)} NSE stocks")
 
     # Create cache directory if it doesn't exist
     cache_dir = Path('data/cache')
@@ -69,7 +69,7 @@ def force_download_all_stocks():
             from src.utils.cache_manager import cache_manager
             cache_manager.update_cache(symbol, data)
 
-            print(f"   ✅ Cached {len(data)} days ({trading_days} trading) for {symbol}")
+            print(f"    Cached {len(data)} days ({trading_days} trading) for {symbol}")
             total_success += 1
 
         except Exception as e:
@@ -85,7 +85,7 @@ def force_download_all_stocks():
     print("\n" + "=" * 40)
     print("FINAL RESULTS:")
     print(f"📊 Total processed: {total_processed}")
-    print(f"✅ Successful: {total_success}")
+    print(f" Successful: {total_success}")
     print(f"❌ Failed: {total_failed}")
     print(f"📈 Success rate: {(total_success/total_processed*100):.1f}%" if total_processed > 0 else "N/A")
 

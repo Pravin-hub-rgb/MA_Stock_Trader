@@ -39,8 +39,8 @@ def display_continuation_results(results: List[Dict]):
         symbol = result['symbol']
         price = f"₹{result['price']:.2f}"
         adr = f"{result.get('adr_percent', 0):.2f}%"
-        ma_status = "✅ Rising"
-        volume = "✅ Confirmed"
+        ma_status = " Rising"
+        volume = " Confirmed"
         notes = result.get('notes', '')
         
         print(f"{symbol:<12} {price:<12} {adr:<8} {ma_status:<15} {volume:<10} {notes}")
@@ -65,7 +65,7 @@ def display_reversal_results(results: List[Dict]):
         adr = f"{result.get('adr_percent', 0):.2f}%"
         decline = f"{result.get('decline_percent', 0)*100:.1f}%"
         score = f"{result.get('score', 0)}"
-        volume = "✅ Confirmed"
+        volume = " Confirmed"
         notes = result.get('notes', '')
         
         print(f"{symbol:<12} {price:<12} {adr:<8} {decline:<10} {volume:<10} {score:<6} {notes}")

@@ -29,19 +29,19 @@ def exchange_code_for_token(auth_code: str) -> dict:
 
         if response.status_code == 200:
             result = response.json()
-            print("✅ SUCCESS! Access token obtained:")
+            print(" SUCCESS! Access token obtained:")
             print("=" * 50)
             print(result.get("access_token"))
             print("=" * 50)
-            print("\n📋 Copy this token and paste it in the frontend.")
+            print("\n Copy this token and paste it in the frontend.")
             return result
         else:
-            print(f"❌ ERROR: {response.status_code}")
+            print(f" ERROR: {response.status_code}")
             print(response.text)
             return None
 
     except Exception as e:
-        print(f"❌ ERROR: {e}")
+        print(f" ERROR: {e}")
         return None
 
 if __name__ == "__main__":
@@ -54,4 +54,4 @@ if __name__ == "__main__":
     if auth_code:
         exchange_code_for_token(auth_code)
     else:
-        print("❌ No code provided")
+        print(" No code provided")

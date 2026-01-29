@@ -37,7 +37,7 @@ def main():
         print(f"Duration: {result['duration_seconds']:.1f} seconds")
 
     if 'verified' in result:
-        print(f"Verified: {'✅ Yes' if result['verified'] else '❌ No'}")
+        print(f"Verified: {' Yes' if result['verified'] else '❌ No'}")
 
     if 'message' in result:
         print(f"Message: {result['message']}")
@@ -46,10 +46,10 @@ def main():
     print("\n" + "=" * 30)
     if status == 'SUCCESS':
         print("🎉 CLEAN UPDATE COMPLETED SUCCESSFULLY!")
-        print("✅ Downloaded bhavcopy file")
-        print("✅ Checked latest available data")
-        print("✅ Cached only missing data")
-        print("✅ Cleaned up temporary files")
+        print(" Downloaded bhavcopy file")
+        print(" Checked latest available data")
+        print(" Cached only missing data")
+        print(" Cleaned up temporary files")
     elif status == 'PARTIAL':
         print("⚠️  PARTIAL SUCCESS")
         print("Some stocks may not have been updated")

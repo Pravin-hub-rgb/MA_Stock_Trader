@@ -1,8 +1,11 @@
- #!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Reversal Stock Monitor - Dedicated monitoring for reversal trading
 Completely separate from continuation logic to avoid contamination
+
+MODULAR ARCHITECTURE: Uses reversal_modules for state management, tick processing,
+and subscription management to eliminate cross-contamination bugs.
 """
 
 import sys
@@ -20,16 +23,28 @@ from config import (
     PREP_START,
     LOW_VIOLATION_PCT,
     ENTRY_SL_PCT,
-    FLAT_GAP_THRESHOLD
+    FLAT_GAP_THRESHOLD,
+    TRAILING_SL_THRESHOLD
 )
+
+# Import modular architecture
+from reversal_modules.state_machine import StateMachineMixin, StockState
+from reversal_modules.tick_processor import ReversalTickProcessor
 
 logger = logging.getLogger(__name__)
 
 
-class ReversalStockState:
-    """Tracks the state of a single stock during reversal trading session"""
+class ReversalStockState(StateMachineMixin):
+    """Tracks the state of a single stock during reversal trading session
+    
+    MODULAR ARCHITECTURE: Uses StateMachineMixin for explicit state management
+    and ReversalTickProcessor for self-contained tick processing.
+    """
 
     def __init__(self, symbol: str, instrument_key: str, previous_close: float, situation: str = 'reversal_s2'):
+        # Initialize state machine
+        StateMachineMixin.__init__(self)
+        
         self.symbol = symbol
         self.instrument_key = instrument_key
         self.previous_close = previous_close
@@ -42,7 +57,7 @@ class ReversalStockState:
         self.daily_low: float = float('inf')
         self.last_update: Optional[datetime] = None
 
-        # Status flags
+        # Status flags (kept for backward compatibility during transition)
         self.is_active = True  # Still being monitored
         self.gap_validated = False
         self.low_violation_checked = False
@@ -95,7 +110,7 @@ class ReversalStockState:
         # Situation-specific gap requirements
         if self.situation == 'reversal_s1':
             # Need gap up > flat threshold, but not too high
-            if gap_pct <= FLAT_GAP_THRESHOLD:
+            if gap_pct <= 0:  # Fixed: Check if gap is down or flat (not <= flat threshold)
                 self.reject(f"Gap down or flat: {gap_pct:.1%} (need gap up > {FLAT_GAP_THRESHOLD:.1%} for {self.situation})")
                 return False
             if gap_pct > 0.05:
@@ -109,6 +124,14 @@ class ReversalStockState:
         else:
             self.reject(f"Unknown situation: {self.situation}")
             return False
+
+        # Update situation type based on actual gap direction
+        if gap_pct > 0:  # Gap up
+            self.situation = 'reversal_s1'  # Strong Start
+            logger.info(f"[{self.symbol}] Gap direction update: Gap up → Strong Start ({self.situation})")
+        else:  # Gap down
+            self.situation = 'reversal_s2'  # OOPS
+            logger.info(f"[{self.symbol}] Gap direction update: Gap down → OOPS ({self.situation})")
 
         self.gap_validated = True
         gap_type = "up" if gap_pct >= 0 else "down"
@@ -145,26 +168,83 @@ class ReversalStockState:
         self.low_violation_checked = True
         return True
 
+    def prepare_entry_oops(self):
+        """Prepare entry for OOPS stocks"""
+        if not self.is_active:
+            return
+
+        # OOPS: No pre-set entry levels, entry happens on trigger
+        # Entry and SL are set dynamically in tick processor when OOPS triggers
+        self.entry_ready = True
+        logger.info(f"[{self.symbol}] OOPS ready - waiting for trigger (prev close: {self.previous_close:.2f})")
+
+    def prepare_entry_ss(self):
+        """Prepare entry for Strong Start stocks"""
+        if not self.is_active:
+            return
+
+        # Strong Start: Check low violation at entry time
+        # Let ticks naturally update high/low during the window
+        # Entry_high will be set when price crosses above high
+        logger.info(f"[{self.symbol}] Strong Start: Checking low violation at entry time")
+        
+        # Check if low violated (gone below 1% from opening price)
+        if self.daily_low < self.open_price * (1 - LOW_VIOLATION_PCT):
+            self.reject(f"Low violation: {self.daily_low:.2f} < {self.open_price * (1 - LOW_VIOLATION_PCT):.2f}")
+            return
+        
+        # If no low violation, keep monitoring - entry_high will be set when price crosses high
+        self.entry_ready = True
+        logger.info(f"[{self.symbol}] Strong Start ready - No low violation, monitoring for entry (current high: {self.daily_high:.2f})")
+        
+        # FIX: Call update_entry_levels() immediately after prepare_entry_ss() to set entry levels
+        self.update_entry_levels()
+
     def prepare_entry(self):
         """Called when stock is qualified to set entry levels"""
         if not self.is_active:
             return
 
-        # Set entry high as the high reached so far
-        self.entry_high = self.daily_high
+        if self.situation == 'reversal_s1':
+            self.prepare_entry_ss()
+        elif self.situation == 'reversal_s2':
+            self.prepare_entry_oops()
+        else:
+            logger.warning(f"[{self.symbol}] Unknown situation: {self.situation}")
 
-        # Set stop loss 4% below entry high
-        self.entry_sl = self.entry_high * (1 - ENTRY_SL_PCT)
+    def update_entry_levels(self):
+        """Update entry levels dynamically as price moves (for Strong Start)"""
+        if not self.is_active:
+            return
+        
+        if self.situation != 'reversal_s1':
+            return
 
-        self.entry_ready = True
-        logger.info(f"[{self.symbol}] Entry prepared - High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f}")
+        # For Strong Start, update entry high as price moves higher
+        if self.daily_high > self.open_price:
+            new_entry_high = self.daily_high
+            new_entry_sl = new_entry_high * (1 - ENTRY_SL_PCT)
+            
+            # Only update if entry high has increased
+            if self.entry_high is None or new_entry_high > self.entry_high:
+                self.entry_high = new_entry_high
+                self.entry_sl = new_entry_sl
+                self.entry_ready = True
+                logger.info(f"[{self.symbol}] Strong Start entry updated - High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f}")
 
     def check_entry_signal(self, price: float) -> bool:
-        """Check if price has broken above the entry high"""
-        if not self.entry_ready or self.entry_high is None:
+        """Check if price has broken above the current high (Strong Start) or previous close (OOPS)"""
+        if not self.entry_ready or not self.is_active:
             return False
 
-        return price >= self.entry_high
+        if self.situation == 'reversal_s1':
+            # Strong Start: Enter when price crosses above current high
+            return price >= self.daily_high
+        elif self.situation == 'reversal_s2':
+            # OOPS: Enter when price crosses above previous close
+            return price >= self.previous_close
+        
+        return False
 
     def enter_position(self, price: float, timestamp: datetime):
         """Enter position at market"""
@@ -172,7 +252,13 @@ class ReversalStockState:
         self.entry_time = timestamp
         self.entered = True
 
-        logger.info(f"[{self.symbol}] ENTRY at {price:.2f} (target was {self.entry_high:.2f})")
+        # For Strong Start, set entry_high and entry_sl when entering
+        if self.situation == 'reversal_s1':
+            self.entry_high = self.daily_high  # Set to current high
+            self.entry_sl = self.entry_high * (1 - ENTRY_SL_PCT)  # 4% below high
+            logger.info(f"[{self.symbol}] ENTRY at {price:.2f} - Strong Start (High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f})")
+        else:
+            logger.info(f"[{self.symbol}] ENTRY at {price:.2f} - OOPS trigger")
 
     def check_exit_signal(self, price: float) -> bool:
         """Check if stop loss hit"""
@@ -193,10 +279,9 @@ class ReversalStockState:
         logger.info(f"[{self.symbol}] EXIT at {price:.2f} | P&L: {self.pnl:.2f}% | Reason: {reason}")
 
     def reject(self, reason: str):
-        """Mark stock as rejected"""
-        self.is_active = False
-        self.rejection_reason = reason
-        logger.info(f"[{self.symbol}] REJECTED: {reason}")
+        """Mark stock as rejected - uses StateMachineMixin's reject method"""
+        # Call the StateMachineMixin's reject method which properly sets state and handles unsubscription
+        StateMachineMixin.reject(self, reason)
 
     def get_status(self) -> Dict:
         """Get current status for logging"""
@@ -252,12 +337,20 @@ class ReversalStockMonitor:
         qualified = []
         rejected = []
 
+        logger.info("=== QUALIFICATION CHECK START ===")
+        
         for stock in self.stocks.values():
-            # For reversals: only gap and low violation required
-            if stock.is_active and stock.gap_validated and stock.low_violation_checked:
+            # For OOPS (reversal_s2): only gap validation needed
+            if stock.situation == 'reversal_s2' and stock.is_active and stock.gap_validated:
                 qualified.append(stock)
+                logger.info(f"[{stock.symbol}] QUALIFIED: OOPS - Gap validated")
+            # For Strong Start (reversal_s1): gap validation AND low violation check needed
+            elif stock.situation == 'reversal_s1' and stock.is_active and stock.gap_validated and stock.low_violation_checked:
+                qualified.append(stock)
+                logger.info(f"[{stock.symbol}] QUALIFIED: Strong Start - Gap validated and low violation checked")
             else:
                 rejected.append(stock)
+                logger.info(f"[{stock.symbol}] REJECTED: Missing checks")
 
         # Log qualified stocks (clean output for reversal)
         if qualified:
@@ -267,9 +360,10 @@ class ReversalStockMonitor:
                 candidate_type = stock.get_candidate_type()
                 logger.info(f"   {stock.symbol}: {candidate_type} - Gap: {gap_pct:+.1f}%")
 
-        # Clean status display for reversal (no detailed logging)
-        logger.info(f"REVERSAL STOCK STATUS ({len(self.stocks)} total):")
-        for stock in self.stocks.values():
+        # ✅ FIXED: Only show actively monitored stocks (not rejected ones)
+        active_stocks = self.get_active_stocks()
+        logger.info(f"REVERSAL STOCK STATUS ({len(active_stocks)} actively monitored):")
+        for stock in active_stocks:
             if stock.open_price is None:
                 logger.info(f"   {stock.symbol}: Waiting for opening price")
             else:
@@ -278,17 +372,21 @@ class ReversalStockMonitor:
                 logger.info(f"   {stock.symbol}: {status} - Open: Rs{stock.open_price:.2f} ({gap_pct:+.1f}%)")
 
         logger.info(f"SUMMARY: {len(qualified)} qualified, {len(rejected)} rejected")
+        logger.info("=== QUALIFICATION CHECK END ===")
         return qualified
 
     def process_tick(self, instrument_key: str, symbol: str, price: float, timestamp: datetime, ohlc_list: list = None):
-        """Process a price tick for a stock"""
+        """Process a price tick for a stock using modular architecture"""
         if instrument_key not in self.stocks:
             return
 
         stock = self.stocks[instrument_key]
 
-        # Update price tracking (for high/low and current price)
-        stock.update_price(price, timestamp)
+        # Delegate to stock's own tick processor (modular architecture)
+        # This handles state-based routing and all entry/exit logic
+        from reversal_modules.tick_processor import ReversalTickProcessor
+        tick_processor = ReversalTickProcessor(stock)
+        tick_processor.process_tick(price, timestamp)
 
         # Set session start if this is the first tick
         if self.session_start_time is None:
@@ -302,8 +400,30 @@ class ReversalStockMonitor:
 
     def prepare_entries(self):
         """Called when stocks are qualified to prepare entry levels"""
-        for stock in self.get_qualified_stocks():
-            stock.prepare_entry()
+        logger.info("=== PREPARE ENTRIES START ===")
+        
+        # FIX: Check low violations BEFORE qualification to ensure Strong Start stocks aren't dropped
+        logger.info("=== PREPARE ENTRIES: Checking low violations before qualification ===")
+        self.check_violations()
+        
+        qualified_stocks = self.get_qualified_stocks()
+        logger.info(f"Preparing entries for {len(qualified_stocks)} qualified stocks")
+        
+        for stock in qualified_stocks:
+            logger.info(f"[{stock.symbol}] Calling prepare_entry() for {stock.situation}")
+            
+            if stock.situation == 'reversal_s1':
+                # Only Strong Start stocks need entry_high/entry_sl processing
+                stock.prepare_entry()
+                logger.info(f"[{stock.symbol}] After prepare_entry() - entry_high={stock.entry_high}, entry_sl={stock.entry_sl}")
+            elif stock.situation == 'reversal_s2':
+                # OOPS stocks don't need entry_high/entry_sl - they trigger on previous_close
+                stock.entry_ready = True
+                logger.info(f"[{stock.symbol}] OOPS ready - waiting for trigger (prev close: {stock.previous_close:.2f})")
+            else:
+                logger.warning(f"[{stock.symbol}] Unknown situation: {stock.situation}")
+        
+        logger.info("=== PREPARE ENTRIES END ===")
 
     def check_entry_signals(self) -> List[ReversalStockState]:
         """Check for entry signals on all qualified stocks"""
@@ -324,6 +444,15 @@ class ReversalStockMonitor:
                 exit_signals.append(stock)
 
         return exit_signals
+
+    def get_subscribed_symbols(self) -> List[str]:
+        """Get list of symbols that are actively subscribed"""
+        return [stock.symbol for stock in self.get_active_stocks()]
+
+    def get_low_violation_stocks(self) -> List[ReversalStockState]:
+        """Get stocks that have violated their low price threshold"""
+        return [stock for stock in self.get_active_stocks() 
+                if stock.state == 'LOW_VIOLATION']
 
     def get_summary(self) -> Dict:
         """Get summary of all stocks"""

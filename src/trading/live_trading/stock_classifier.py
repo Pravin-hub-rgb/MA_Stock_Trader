@@ -90,30 +90,8 @@ class StockClassifier:
                 symbols.append(symbol)
                 situations[symbol] = situation
 
-            print(f"Loaded {len(symbols)} reversal stocks:")
-
-            # Create a mapping of symbol to its trend and days for printing
-            symbol_details = {}
-            for entry in raw_entries:
-                parts = entry.split('-')
-                if len(parts) == 2:
-                    symbol = parts[0]
-                    trend_days = parts[1]
-                    if len(trend_days) >= 2:
-                        trend = trend_days[0]
-                        try:
-                            days = int(trend_days[1:])
-                            symbol_details[symbol] = (trend, days)
-                        except ValueError:
-                            pass
-
-            for symbol, situation in situations.items():
-                trend, days = symbol_details.get(symbol, ('?', 0))
-                if situation == 'reversal_s1':
-                    desc = f"Strong Start ({trend}{days}) - 3-6 days uptrend"
-                else:  # reversal_s2
-                    desc = f"OOPS ({trend}{days}) - {days} days {'any trend' if days >= 7 else 'downtrend'}"
-                print(f"   {symbol}: {desc}")
+            # ✅ REMOVED: Skip verbose logging for pure first-come-first-serve
+            # Classification is handled internally, no need to print details
 
             return symbols, situations
 

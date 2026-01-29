@@ -19,7 +19,8 @@ from config import (
     PREP_START,
     LOW_VIOLATION_PCT,
     ENTRY_SL_PCT,
-    FLAT_GAP_THRESHOLD
+    FLAT_GAP_THRESHOLD,
+    ENTRY_TIME
 )
 
 logger = logging.getLogger(__name__)
@@ -53,8 +54,10 @@ class StockState:
         self.oops_triggered = False
         self.strong_start_triggered = False
 
-        # Volume tracking (9:15-9:20)
+        # Volume tracking 
         self.early_volume = 0.0  # Cumulative volume during monitoring window
+        self.initial_volume = 0.0  # Initial volume at market open for cumulative tracking
+        self.volume_baseline = 0.0  # Mean volume baseline from cache
 
         # Entry data (set at 9:20 or dynamically for reversal)
         self.entry_high: Optional[float] = None  # High reached by 9:20
@@ -78,7 +81,7 @@ class StockState:
         self.last_update = timestamp
 
     def set_open_price(self, price: float):
-        """Set the opening price at 9:15"""
+        """Set the opening price at market open"""
         self.open_price = price
         self.daily_high = price
         self.daily_low = price
@@ -169,20 +172,48 @@ class StockState:
         self.low_violation_checked = True
         return True
 
-    def validate_volume(self, volume_baseline: float, min_ratio: float = 0.05) -> bool:
+    def _format_volume(self, vol: float) -> str:
+        """Format volume with K/M suffixes for readability"""
+        if vol >= 1000000:
+            return f"{vol/1000000:.1f}M"
+        elif vol >= 1000:
+            return f"{vol/1000:.1f}K"
+        else:
+            return f"{vol:.0f}"
+
+    def validate_volume(self, volume_baseline: float, min_ratio: float = 0.075) -> bool:
         """Validate relative volume for SVRO - must have minimum activity"""
         if volume_baseline <= 0:
             self.reject("No volume baseline available")
             return False
 
-        volume_ratio = self.early_volume / volume_baseline
-
+        # Log detailed volume validation information
+        logger.info(f"[{self.symbol}] VOLUME VALIDATION DETAILS:")
+        logger.info(f"   Initial Volume: {self._format_volume(self.initial_volume)}")
+        logger.info(f"   Current Volume: {self._format_volume(self.early_volume)}")
+        
+        # Calculate cumulative volume (current - initial)
+        cumulative_volume = self.early_volume - self.initial_volume
+        logger.info(f"   Cumulative Volume: {self._format_volume(cumulative_volume)}")
+        
+        # Calculate percentage of mean volume baseline
+        volume_ratio = cumulative_volume / volume_baseline
+        logger.info(f"   Mean Volume Baseline: {self._format_volume(volume_baseline)}")
+        logger.info(f"   Volume Percentage: {volume_ratio:.1%}")
+        
         if volume_ratio < min_ratio:
-            self.reject(f"Insufficient relative volume: {volume_ratio:.1%} < {min_ratio:.1%} (SVRO requirement)")
+            cumulative_vol_str = self._format_volume(cumulative_volume)
+            baseline_vol_str = self._format_volume(volume_baseline)
+            logger.info(f"   SVRO Threshold: {min_ratio:.1%} - NOT MET")
+            self.reject(f"Insufficient relative volume: {volume_ratio:.1%} ({cumulative_vol_str}) < {min_ratio:.1%} of ({baseline_vol_str}) (SVRO requirement)")
             return False
 
+        logger.info(f"   SVRO Threshold: {min_ratio:.1%} - MET")
         self.volume_validated = True
-        logger.info(f"[{self.symbol}] Volume validated: {volume_ratio:.1%} >= {min_ratio:.1%}")
+        # Format the success message with the exact format requested
+        cumulative_vol_str = self._format_volume(cumulative_volume)
+        baseline_vol_str = self._format_volume(volume_baseline)
+        logger.info(f"[{self.symbol}] Volume: {volume_ratio:.1%} ({cumulative_vol_str}) >= {min_ratio:.1%} of ({baseline_vol_str})")
         return True
 
     def prepare_entry(self):
@@ -335,16 +366,51 @@ class StockMonitor:
             # Gap validation status
             if stock.gap_validated:
                 status_parts.append("Gap validated")
-                status_parts.append(f"REJECTED: {stock.rejection_reason}")
             else:
                 status_parts.append("Gap not validated")
+                if stock.rejection_reason:
+                    status_parts.append(f"REJECTED: {stock.rejection_reason}")
 
             # Low violation status
             if stock.low_violation_checked:
                 status_parts.append("Low violation checked")
-                status_parts.append(f"REJECTED: {stock.rejection_reason}")
             else:
                 status_parts.append("Low not checked")
+                if stock.rejection_reason:
+                    status_parts.append(f"REJECTED: {stock.rejection_reason}")
+
+            # Volume validation status with detailed information
+            if stock.volume_validated:
+                # Format volume information for display using stock's method
+                # Calculate cumulative volume (current - initial) to match validate_volume() logic
+                cumulative_volume = stock.early_volume - stock.initial_volume
+                cumulative_vol_str = stock._format_volume(cumulative_volume)
+                # Use the stored volume baseline from check_volume_validations()
+                volume_baseline = getattr(stock, 'volume_baseline', 0)
+                
+                # If volume_baseline is 0 or the fallback value, try to get it from stock_scorer metadata
+                if volume_baseline <= 0 or volume_baseline == 1000000:
+                    try:
+                        import sys
+                        import os
+                        parent_dir = os.path.dirname(os.path.dirname(__file__))
+                        if parent_dir not in sys.path:
+                            sys.path.insert(0, parent_dir)
+                        from src.trading.live_trading.stock_scorer import stock_scorer
+                        metadata = stock_scorer.stock_metadata.get(stock.symbol, {})
+                        volume_baseline = metadata.get('volume_baseline', 1000000)
+                        stock.volume_baseline = volume_baseline  # Update the stored value
+                    except:
+                        pass
+                
+                baseline_vol_str = stock._format_volume(volume_baseline)
+                # Calculate volume ratio to match validate_volume() logic
+                volume_ratio = (cumulative_volume / volume_baseline * 100) if volume_baseline > 0 else 0
+                status_parts.append(f"Volume validated {volume_ratio:.1f}% ({cumulative_vol_str}) >= 7.5% of ({baseline_vol_str})")
+            else:
+                status_parts.append("Volume not checked")
+                if stock.rejection_reason:
+                    status_parts.append(f"REJECTED: {stock.rejection_reason}")
 
             # Overall status
             if stock.is_active and stock.gap_validated and stock.low_violation_checked:
@@ -443,29 +509,70 @@ class StockMonitor:
         parent_dir = os.path.dirname(os.path.dirname(__file__))
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
-        from src.trading.live_trading.stock_scorer import stock_scorer
+        from src.utils.upstox_fetcher import upstox_fetcher
 
         for stock in self.get_active_stocks():
             if (stock.situation == 'continuation' and stock.gap_validated and
                 stock.low_violation_checked and not stock.volume_validated):
-                # Get volume baseline for this stock
+                # Get current volume using the new volume-only method
                 try:
-                    metadata = stock_scorer.stock_metadata.get(stock.symbol, {})
-                    volume_baseline = metadata.get('volume_baseline', 1000000)
-                    stock.validate_volume(volume_baseline)
+                    current_volume = upstox_fetcher.get_current_volume(stock.symbol)
+                    if current_volume > 0:
+                        # Calculate cumulative volume (session volume)
+                        cumulative_volume = current_volume - stock.initial_volume
+                        if cumulative_volume < 0:  # Handle volume reset
+                            cumulative_volume = 0
+                        
+                        # CRITICAL: When market is closed, cumulative volume should be 0
+                        # Check if market is currently open
+                        from datetime import datetime, time
+                        import pytz
+                        IST = pytz.timezone('Asia/Kolkata')
+                        current_time = datetime.now(IST).time()
+                        
+                        # Market hours: 9:15 AM to 3:30 PM IST
+                        market_open = time(9, 15)
+                        market_close = time(15, 30)
+                        
+                        if not (market_open <= current_time <= market_close):
+                            # Market is closed, cumulative volume should be 0
+                            cumulative_volume = 0
+                            logger.info(f"[{stock.symbol}] Market closed ({current_time}), setting cumulative volume to 0")
+                        
+                        # Use the pre-loaded volume baseline from run_continuation.py
+                        # The baseline should already be set in stock.volume_baseline during PREP time
+                        volume_baseline = stock.volume_baseline
+                        
+                        # CRITICAL: If baseline is still 0 or default, show ERROR instead of using fallback
+                        if volume_baseline <= 0 or volume_baseline == 1000000:
+                            logger.error(f"ERROR: No valid volume baseline for {stock.symbol}")
+                            logger.error(f"   stock.volume_baseline = {volume_baseline}")
+                            logger.error(f"   This should have been set during PREP time")
+                            stock.reject("Volume baseline not available - check PREP time loading")
+                            continue
+                        
+                        # Set the cumulative volume (NOT the total volume)
+                        stock.early_volume = cumulative_volume
+                        
+                        # Validate volume
+                        stock.validate_volume(volume_baseline)
+                    else:
+                        logger.warning(f"No volume data for {stock.symbol}")
+                        stock.reject("No volume data available")
+                        
                 except Exception as e:
                     logger.error(f"Error validating volume for {stock.symbol}: {e}")
                     stock.reject("Volume validation error")
 
     def accumulate_volume(self, instrument_key: str, volume: float):
-        """Accumulate volume during 9:15-9:20 monitoring window"""
+        """Accumulate volume during market hours using the new volume-only method"""
         if instrument_key not in self.stocks:
             return
 
         stock = self.stocks[instrument_key]
-
-        # Only accumulate during monitoring window (MARKET_OPEN to ENTRY_TIME)
         current_time = datetime.now().time()
+
+        # Only accumulate volume during the monitoring window
         if MARKET_OPEN <= current_time <= ENTRY_TIME:
             stock.early_volume += volume
 

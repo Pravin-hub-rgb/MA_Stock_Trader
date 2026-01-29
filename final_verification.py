@@ -10,7 +10,7 @@ from pathlib import Path
 def final_verification():
     """Comprehensive verification of Jan 6 data coverage"""
 
-    print('🔍 COMPREHENSIVE VERIFICATION: ALL CACHED STOCKS HAVE JAN 6 DATA')
+    print(' COMPREHENSIVE VERIFICATION: ALL CACHED STOCKS HAVE JAN 6 DATA')
     print('=' * 80)
 
     # Get all cached stocks
@@ -27,7 +27,7 @@ def final_verification():
     without_jan6 = 0
     errors = 0
 
-    print('\n🔎 Checking each stock individually...')
+    print('\n Checking each stock individually...')
     missing_stocks = []
 
     for i, cache_file in enumerate(cached_files):
@@ -46,17 +46,17 @@ def final_verification():
 
         # Progress indicator
         if (i + 1) % 500 == 0:
-            print(f'  📊 Verified {i + 1}/{total_cached} stocks...')
+            print(f'   Verified {i + 1}/{total_cached} stocks...')
 
     print('\n' + '=' * 80)
-    print('📊 FINAL VERIFICATION RESULTS:')
-    print(f'✅ Stocks WITH Jan 6 data: {with_jan6}')
-    print(f'❌ Stocks WITHOUT Jan 6 data: {without_jan6}')
-    print(f'🚨 Errors during checking: {errors}')
-    print(f'📈 Coverage: {with_jan6}/{total_cached} ({with_jan6/total_cached*100:.2f}%)')
+    print(' FINAL VERIFICATION RESULTS:')
+    print(f' Stocks WITH Jan 6 data: {with_jan6}')
+    print(f' Stocks WITHOUT Jan 6 data: {without_jan6}')
+    print(f' Errors during checking: {errors}')
+    print(f' Coverage: {with_jan6}/{total_cached} ({with_jan6/total_cached*100:.2f}%)')
 
     if without_jan6 > 0:
-        print(f'\n⚠️  MISSING STOCKS ({len(missing_stocks)}):')
+        print(f'\n  MISSING STOCKS ({len(missing_stocks)}):')
         for i, stock in enumerate(missing_stocks[:10]):  # Show first 10
             print(f'   {i+1}. {stock}')
         if len(missing_stocks) > 10:
@@ -64,7 +64,7 @@ def final_verification():
 
     # Additional verification: Sample some stocks to show their data
     if with_jan6 > 0:
-        print(f'\n🎯 SAMPLE STOCK VERIFICATION:')
+        print(f'\n SAMPLE STOCK VERIFICATION:')
         sample_indices = [0, 100, 500, 1000, 1500, 2000, -1]  # First, middle, last
         for idx in sample_indices:
             if 0 <= idx < len(cached_files):
@@ -75,20 +75,20 @@ def final_verification():
                         row = df.loc[target_date]
                         print(f'   {symbol}: O:{row["open"]:.2f} H:{row["high"]:.2f} L:{row["low"]:.2f} C:{row["close"]:.2f} V:{row["volume"]:.0f}')
                     else:
-                        print(f'   {symbol}: ❌ Missing Jan 6 data')
+                        print(f'   {symbol}:  Missing Jan 6 data')
                 except Exception as e:
-                    print(f'   {symbol}: 🚨 Error - {str(e)[:30]}')
+                    print(f'   {symbol}:  Error - {str(e)[:30]}')
 
     print('\n' + '=' * 50)
     if with_jan6 == total_cached and without_jan6 == 0:
         print('🎉 VERIFICATION COMPLETE: ALL STOCKS HAVE JAN 6 DATA!')
-        print('✅ 100% coverage achieved')
-        print('✅ NSE bhavcopy integration successful')
-        print('✅ System ready for production')
+        print(' 100% coverage achieved')
+        print(' NSE bhavcopy integration successful')
+        print(' System ready for production')
     elif with_jan6/total_cached >= 0.99:
-        print('✅ NEARLY COMPLETE: 99%+ coverage achieved')
+        print(' NEARLY COMPLETE: 99%+ coverage achieved')
     else:
-        print('⚠️  INCOMPLETE: Significant gaps remain')
+        print('  INCOMPLETE: Significant gaps remain')
 
 if __name__ == "__main__":
     final_verification()

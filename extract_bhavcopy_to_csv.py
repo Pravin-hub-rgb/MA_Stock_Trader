@@ -31,7 +31,7 @@ def extract_bhavcopy_to_csv():
             print("   Reason: NSE data retention (available ~6 PM IST daily)")
             return
 
-        print(f"✅ SUCCESS: Downloaded {len(df)} stocks")
+        print(f" SUCCESS: Downloaded {len(df)} stocks")
 
         # Show data info
         print(f"\n📋 DATA INFO:")

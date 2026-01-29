@@ -335,14 +335,31 @@ class UpstoxFetcher:
 
     def get_ltp_data(self, symbol: str) -> Dict:
         """
-        Get LTP (Last Traded Price) data using available API methods
+        Get LTP (Last Traded Price) data using historical API as primary, cache as fallback
         """
         try:
-            # Try direct HTTP request first (most reliable)
-            return self._get_ltp_data_fallback(symbol)
+            # Method 1: Try historical API (most accurate)
+            today = date.today()
+            start_date = today - timedelta(days=7)
+            end_date = today - timedelta(days=1)
 
+            df = self.fetch_historical_data(symbol, start_date, end_date)
+
+            if not df.empty:
+                # Return the most recent close (last trading day)
+                hist_close = float(df.iloc[-1]['close'])
+                
+                # Get current LTP data but use historical close for 'cp'
+                ltp_data = self._get_ltp_data_fallback(symbol)
+                if ltp_data:
+                    ltp_data['cp'] = hist_close  # Override with historical close
+                    return ltp_data
+
+            # Method 2: Fall back to cache (in _get_ltp_data_fallback)
+            return self._get_ltp_data_fallback(symbol)
+            
         except Exception as e:
-            logger.error(f"All LTP methods failed for {symbol}: {e}")
+            logger.error(f"All methods failed for {symbol}: {e}")
             return {}
 
     def get_current_ohlc(self, symbols: List[str]) -> Dict[str, Dict]:
@@ -437,9 +454,9 @@ class UpstoxFetcher:
             logger.error(f"OHLC data fetch failed for {symbol}: {e}")
             return {}
 
-    def _get_ltp_data_fallback(self, symbol: str) -> Dict:
+    def _get_ltp_data_original(self, symbol: str) -> Dict:
         """
-        Fallback LTP data fetch using direct HTTP request (for SDK compatibility)
+        Original LTP data fetch using direct HTTP request (for SDK compatibility)
         """
         try:
             import requests
@@ -491,6 +508,82 @@ class UpstoxFetcher:
         except Exception as e:
             logger.error(f"Error in LTP fallback for {symbol}: {e}")
             return {}
+
+    def _get_ltp_data_fallback(self, symbol: str) -> Dict:
+        """
+        Fallback LTP data fetch using cache (for SDK compatibility)
+        """
+        try:
+            # Use cache instead of LTP API
+            cache_file = os.path.join('data', 'cache', f'{symbol}.pkl')
+            
+            if os.path.exists(cache_file):
+                import pickle
+                with open(cache_file, 'rb') as f:
+                    cache_data = pickle.load(f)
+                
+                if not cache_data.empty and 'close' in cache_data.columns:
+                    latest_close = cache_data.iloc[0]['close']
+                    
+                    # Get current LTP data but use cache close for 'cp'
+                    ltp_data = self._get_ltp_data_original(symbol)  # Original LTP call
+                    if ltp_data:
+                        ltp_data['cp'] = latest_close  # Override with cache close
+                        return ltp_data
+            
+            # If cache fails, try original LTP API
+            return self._get_ltp_data_original(symbol)
+            
+        except Exception as e:
+            logger.error(f"Error in cache fallback for {symbol}: {e}")
+            return {}
+
+    def get_current_volume(self, symbol: str) -> float:
+        """
+        Get only current volume data without historical overhead.
+        This method avoids fetching historical data and previous close calculations.
+        """
+        try:
+            instrument_key = self.get_instrument_key(symbol)
+            if not instrument_key:
+                logger.error(f"No instrument key found for {symbol}")
+                return 0.0
+
+            # Use the LTP endpoint which includes volume data
+            url = f"https://api.upstox.com/v3/market-quote/ltp?instrument_key={instrument_key}"
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.access_token}"
+            }
+
+            response = requests.get(url, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                if data.get('status') == 'success':
+                    # API returns data under different key format
+                    data_dict = data.get('data', {})
+                    instrument_data = {}
+
+                    # Try the requested key first
+                    if instrument_key in data_dict:
+                        instrument_data = data_dict[instrument_key]
+                    else:
+                        # Try alternative formats - API uses NSE_EQ:SYMBOL format
+                        alt_key = f"NSE_EQ:{symbol.upper()}"
+                        if alt_key in data_dict:
+                            instrument_data = data_dict[alt_key]
+
+                    volume = instrument_data.get('volume', 0)
+                    return float(volume)
+
+            logger.error(f"Volume fetch error for {symbol}: {response.status_code} - {response.text}")
+            return 0.0
+
+        except Exception as e:
+            logger.error(f"Error getting current volume for {symbol}: {e}")
+            return 0.0
 
 # Import IEP module
 from .upstox_modules.pre_market_iep_module import PreMarketIEPManager

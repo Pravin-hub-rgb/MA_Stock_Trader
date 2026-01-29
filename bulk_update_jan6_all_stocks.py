@@ -86,7 +86,7 @@ def bulk_update_stocks(stock_list, bhavcopy_df, batch_size=50):
                 # Update cache
                 cache_manager.update_with_bhavcopy(symbol, cache_df)
 
-                print(f"  ✅ {symbol}")
+                print(f"   {symbol}")
                 batch_updated += 1
                 total_updated += 1
 
@@ -127,7 +127,7 @@ def main():
         print("Please run again when NSE data is available")
         return
 
-    print(f"✅ Downloaded {len(bhavcopy_df)} stocks from NSE")
+    print(f" Downloaded {len(bhavcopy_df)} stocks from NSE")
 
     # Step 3: Bulk update in batches
     updated, failed = bulk_update_stocks(needs_update, bhavcopy_df, batch_size=100)
@@ -145,7 +145,7 @@ def main():
     print(f"📊 Stocks already had data: {len(already_have)}")
     print(f"🔄 Stocks updated: {updated}")
     print(f"❌ Update failures: {failed}")
-    print(f"✅ Final total with Jan 6: {len(final_already_have)}")
+    print(f" Final total with Jan 6: {len(final_already_have)}")
     print(f"📈 Success rate: {(updated/(updated+failed)*100):.1f}%" if (updated+failed) > 0 else "N/A")
 
     if len(final_already_have) == len(already_have) + updated:

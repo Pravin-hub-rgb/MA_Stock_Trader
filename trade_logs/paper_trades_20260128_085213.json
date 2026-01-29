@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2026-01-28T09:16:00.296834+05:30",
+    "type": "ENTRY",
+    "symbol": "POONAWALLA",
+    "instrument_key": "NSE_EQ|INE511C01022",
+    "entry_price": 1540.3,
+    "entry_high": 411.75,
+    "stop_loss": 395.28,
+    "open_price": 409.15,
+    "previous_close": 404.4,
+    "gap_pct": 1.17,
+    "session": "20260128_085213"
+  }
+]
