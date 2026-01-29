@@ -86,7 +86,6 @@ Thumbs.db
 
 # Project specific
 docs/prompts.md
-test_*.py
 debug_*.py
 *_debug.py
 option-trading-bot
