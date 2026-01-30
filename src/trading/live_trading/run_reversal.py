@@ -307,9 +307,13 @@ def run_reversal_bot():
             active_stocks = monitor.get_active_stocks()
             oops_stocks = [stock for stock in active_stocks if stock.situation == 'reversal_s2' and stock.gap_validated]
             
-            for stock in oops_stocks:
-                stock.entry_ready = True
-                print(f"READY to trade: {stock.symbol} - OOPS (Trigger: Rs{stock.previous_close:.2f})")
+            if oops_stocks:
+                print(f"OOPS CANDIDATES READY FOR IMMEDIATE TRADING ({len(oops_stocks)}):")
+                for stock in oops_stocks:
+                    stock.entry_ready = True
+                    print(f"   {stock.symbol} (OOPS): Previous Close Rs{stock.previous_close:.2f} - Ready for trigger")
+            else:
+                print("No OOPS candidates ready")
             
             print(f"OOPS stocks ready: {len(oops_stocks)}")
 
@@ -371,19 +375,25 @@ def run_reversal_bot():
             print(f"All {len(qualified_stocks)} qualified stocks remain subscribed for first-come-first-serve")
 
             # Mark all qualified stocks as ready (no selection)
-            for stock in qualified_stocks:
-                # OOPS stocks are already ready from market open
-                if stock.situation == 'reversal_s2':
-                    continue  # Already marked as ready above
-                
-                stock.entry_ready = True
-                
-                if stock.situation == 'reversal_s1':
-                    # Strong Start has entry_high and entry_sl
-                    print(f"READY to trade: {stock.symbol} - Strong Start (High: Rs{stock.daily_high:.2f}, Low: Rs{stock.daily_low:.2f})")
-                else:
-                    # Fallback for unknown situations
-                    print(f"READY to trade: {stock.symbol}")
+            print("\n=== ENTRY TIME: Strong Start candidates ready ===")
+            strong_start_stocks = [stock for stock in qualified_stocks if stock.situation == 'reversal_s1']
+            
+            if strong_start_stocks:
+                print(f"STRONG START CANDIDATES READY FOR TRADING ({len(strong_start_stocks)}):")
+                for stock in strong_start_stocks:
+                    stock.entry_ready = True
+                    print(f"   {stock.symbol} (Strong Start): High Rs{stock.daily_high:.2f}, SL Rs{stock.entry_sl:.2f} - Ready for trigger")
+            else:
+                print("No Strong Start candidates ready")
+            
+            # OOPS stocks were already marked ready at market open
+            oops_stocks = [stock for stock in qualified_stocks if stock.situation == 'reversal_s2']
+            if oops_stocks:
+                print(f"\nOOPS CANDIDATES (already ready since market open): {len(oops_stocks)}")
+                for stock in oops_stocks:
+                    print(f"   {stock.symbol} (OOPS): Previous Close Rs{stock.previous_close:.2f} - Ready for trigger")
+            else:
+                print("No OOPS candidates ready")
 
             # Initialize selected_stocks for the tick handler (all qualified stocks)
             global_selected_symbols = {stock.symbol for stock in qualified_stocks}

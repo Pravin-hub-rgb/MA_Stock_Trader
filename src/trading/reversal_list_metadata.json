@@ -1,66 +1,38 @@
 {
   "stocks": [
     {
-      "symbol": "ANANTRAJ",
+      "symbol": "GKENERGY",
       "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-01-29T08:31:45.812424",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "BALUFORGE",
-      "period": 15,
-      "trend": "downtrend",
-      "added_at": "2026-01-29T08:31:50.357289",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "GARUDA",
-      "period": 13,
-      "trend": "downtrend",
-      "added_at": "2026-01-29T08:31:57.820116",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "EPACK",
-      "period": 15,
-      "trend": "downtrend",
-      "added_at": "2026-01-29T08:32:09.426693",
+      "added_at": "2026-01-30T21:15:14.175003",
       "added_from": "scan_results"
     },
     {
       "symbol": "KALYANKJIL",
-      "period": 13,
+      "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-01-29T08:32:14.435829",
+      "added_at": "2026-01-30T21:15:17.287124",
       "added_from": "scan_results"
     },
     {
       "symbol": "KPIGREEN",
       "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-01-29T08:32:19.260682",
+      "added_at": "2026-01-30T21:15:22.206625",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "POONAWALLA",
+      "period": 9,
+      "trend": "uptrend",
+      "added_at": "2026-01-30T21:15:26.776274",
       "added_from": "scan_results"
     },
     {
       "symbol": "SHREEJISPG",
-      "period": 9,
-      "trend": "uptrend",
-      "added_at": "2026-01-29T08:32:23.158293",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "SIGNATURE",
-      "period": 15,
+      "period": 11,
       "trend": "downtrend",
-      "added_at": "2026-01-29T08:32:27.325633",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "ASHAPURMIN",
-      "period": 10,
-      "trend": "uptrend",
-      "added_at": "2026-01-29T08:32:33.335506",
+      "added_at": "2026-01-30T21:15:32.799480",
       "added_from": "scan_results"
     }
   ]

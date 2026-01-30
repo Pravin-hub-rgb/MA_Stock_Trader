@@ -1,3 +1,9 @@
 {
-  "stocks": []
+  "stocks": [
+    {
+      "symbol": "ADVANCE",
+      "added_at": "2026-01-30T21:12:29.086807",
+      "added_from": "scan_results"
+    }
+  ]
 }
