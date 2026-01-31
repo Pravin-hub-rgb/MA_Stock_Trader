@@ -1,13 +1,8 @@
 {
-  "timestamp": "2026-01-29T11:54:00.753024",
+  "timestamp": "2026-01-31T09:11:35.737233",
   "mode": "continuation",
   "results": {
-    "BLISSGVS": 168.83,
-    "CUPID": 401.53,
-    "GRAPHITE": 658.97,
-    "JAINREC": 394.93,
-    "JWL": 325.33,
-    "KROSS": 193.58
+    "ADVANCE": 135.55
   },
-  "summary": "6 stocks calculated"
+  "summary": "1 stocks calculated"
 }

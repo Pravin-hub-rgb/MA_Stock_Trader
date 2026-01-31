@@ -288,6 +288,41 @@ class SimpleStockStreamer:
                     print("Max retries reached - exiting")
                     return False
 
+    def _reconnect_with_retries(self):
+        """Reconnect with proper exponential backoff after connection loss"""
+        if self.reconnecting:
+            return False
+        
+        self.reconnecting = True
+        attempt = 1
+        
+        while attempt <= self.max_reconnect_attempts and not self.connected:
+            # Exponential backoff: 5, 10, 20, 40, 80 seconds
+            wait_time = 5 * (2 ** (attempt - 1))
+            current_time = datetime.now(IST).strftime('%H:%M:%S')
+            print(f"Reconnecting (attempt {attempt}/{self.max_reconnect_attempts}) at {current_time} - waiting {wait_time}s...")
+            
+            import time
+            time.sleep(wait_time)
+            
+            try:
+                if self.connect():
+                    if self.connected:
+                        print(f"Reconnection successful at {datetime.now(IST).strftime('%H:%M:%S')}")
+                        break
+            except Exception as e:
+                print(f"Reconnect attempt {attempt} failed: {e}")
+            
+            attempt += 1
+        
+        self.reconnecting = False
+        
+        if not self.connected:
+            print("Max reconnection attempts reached - stopping")
+            return False
+        
+        return True
+
     def reconnect(self):
         """Attempt to reconnect with proper exponential backoff"""
         if self.reconnecting:
