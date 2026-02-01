@@ -428,7 +428,7 @@ class Scanner:
     def _find_latest_available_scan_date(self) -> Optional[date]:
         """
         Find the most recent date that has cached data for stocks.
-        Optimized to check only a few files per date for speed.
+        Simply finds the latest cached date without weekend checks (handles Budget Day exceptions).
         """
         from pathlib import Path
 
@@ -439,50 +439,46 @@ class Scanner:
             logger.error("No cached stock files found")
             return None
 
-        # Filter to only stock cache files and use first 5 for date detection
+        # Filter to only stock cache files
         stock_cache_files = [f for f in cached_files if '_' not in f.stem and f.stem.isupper()]
-        sample_files = stock_cache_files[:5]
+        
+        if not stock_cache_files:
+            logger.error("No stock cache files found")
+            return None
 
-        # Check backwards from today, up to 30 days
-        for days_back in range(31):
-            check_date = date.today() - timedelta(days=days_back)
-
-            # Skip weekends (non-trading days)
-            if check_date.weekday() >= 5:
+        # Find the most recent date across all cached files
+        latest_date = None
+        
+        for cache_file in stock_cache_files:
+            symbol = cache_file.stem
+            try:
+                df = cache_manager.load_cached_data(symbol)
+                if df is not None and not df.empty:
+                    # Get the latest date in this stock's data
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        file_latest_date = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
+                    else:
+                        # Handle non-DatetimeIndex
+                        file_latest_date = df.index[-1]
+                    
+                    # Convert to date if it's a timestamp
+                    if hasattr(file_latest_date, 'date'):
+                        file_latest_date = file_latest_date.date()
+                    
+                    # Update global latest date
+                    if latest_date is None or file_latest_date > latest_date:
+                        latest_date = file_latest_date
+                        
+            except Exception as e:
+                logger.warning(f"Error checking cache for {symbol}: {e}")
                 continue
 
-            stocks_with_data = 0
-
-            # Check how many stocks have data for this date
-            for cache_file in sample_files:
-                symbol = cache_file.stem
-                try:
-                    df = cache_manager.load_cached_data(symbol)
-                    if df is not None and not df.empty:
-                        # More robust date checking
-                        date_found = False
-                        for idx in df.index:
-                            if hasattr(idx, 'date') and idx.date() == check_date:
-                                date_found = True
-                                break
-                            elif str(idx).startswith(check_date.strftime('%Y-%m-%d')):
-                                date_found = True
-                                break
-
-                        if date_found:
-                            stocks_with_data += 1
-                            if stocks_with_data >= 3:  # Found enough stocks with data
-                                logger.info(f"Found latest available scan date: {check_date} ({stocks_with_data} stocks have data)")
-                                return check_date
-                except Exception:
-                    continue
-
-            if stocks_with_data > 0:
-                logger.info(f"Found latest available scan date: {check_date} ({stocks_with_data} stocks have data)")
-                return check_date
-
-        logger.error("No recent cached data found for any date in the last 30 days")
-        return None
+        if latest_date:
+            logger.info(f"Found latest available scan date: {latest_date}")
+            return latest_date
+        else:
+            logger.error("No cached data found with valid dates")
+            return None
 
     def _get_stock_price(self, symbol: str) -> float:
         """Get current stock price for filtering"""
