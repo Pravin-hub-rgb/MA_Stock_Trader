@@ -207,6 +207,7 @@ class ReversalStockState(StateMachineMixin):
         
         # If no low violation, keep monitoring - entry_high will be set when price crosses high
         self.entry_ready = True
+        self._transition_to_monitoring_entry("Strong Start ready for entry")
         logger.info(f"[{self.symbol}] Strong Start ready - No low violation, monitoring for entry (current high: {self.daily_high:.2f})")
         
         # FIX: Call update_entry_levels() immediately after prepare_entry_ss() to set entry levels
@@ -439,6 +440,7 @@ class ReversalStockMonitor:
             elif stock.situation == 'reversal_s2':
                 # OOPS stocks don't need entry_high/entry_sl - they trigger on previous_close
                 stock.entry_ready = True
+                stock._transition_to_monitoring_entry("OOPS ready for entry")
                 logger.info(f"[{stock.symbol}] OOPS ready - waiting for trigger (prev close: {stock.previous_close:.2f})")
             else:
                 logger.warning(f"[{stock.symbol}] Unknown situation: {stock.situation}")

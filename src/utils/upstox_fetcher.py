@@ -525,10 +525,12 @@ class UpstoxFetcher:
                 if not cache_data.empty and 'close' in cache_data.columns:
                     latest_close = cache_data.iloc[0]['close']
                     
-                    # Get current LTP data but use cache close for 'cp'
+                    # Get current LTP data but use cache close for 'cp' only if LTP API doesn't provide one
                     ltp_data = self._get_ltp_data_original(symbol)  # Original LTP call
                     if ltp_data:
-                        ltp_data['cp'] = latest_close  # Override with cache close
+                        # Only use cache close if LTP API didn't provide a previous close
+                        if ltp_data.get('cp') is None:
+                            ltp_data['cp'] = latest_close  # Override with cache close
                         return ltp_data
             
             # If cache fails, try original LTP API

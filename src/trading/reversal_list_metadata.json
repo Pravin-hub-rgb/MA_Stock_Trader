@@ -1,87 +1,45 @@
 {
   "stocks": [
     {
-      "symbol": "FEDFINA",
-      "period": 11,
+      "symbol": "AGIIL",
+      "period": 15,
       "trend": "downtrend",
-      "added_at": "2026-02-01T21:12:40.653518",
+      "added_at": "2026-02-02T17:48:33.566841",
       "added_from": "scan_results"
     },
     {
-      "symbol": "UPL",
-      "period": 9,
+      "symbol": "BDL",
+      "period": 4,
       "trend": "uptrend",
-      "added_at": "2026-02-01T21:17:49.348575",
+      "added_at": "2026-02-02T17:48:38.349128",
       "added_from": "scan_results"
     },
     {
-      "symbol": "POONAWALLA",
-      "period": 10,
+      "symbol": "FEDFINA",
+      "period": 12,
       "trend": "downtrend",
-      "added_at": "2026-02-01T21:17:53.184805",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "PNBHOUSING",
-      "period": 11,
-      "trend": "downtrend",
-      "added_at": "2026-02-01T21:17:56.140906",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "MOTILALOFS",
-      "period": 11,
-      "trend": "downtrend",
-      "added_at": "2026-02-01T21:17:59.656512",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "KPITTECH",
-      "period": 10,
-      "trend": "downtrend",
-      "added_at": "2026-02-01T21:18:01.960367",
+      "added_at": "2026-02-02T17:48:43.621504",
       "added_from": "scan_results"
     },
     {
       "symbol": "KPIGREEN",
-      "period": 13,
+      "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-02-01T21:18:06.514000",
+      "added_at": "2026-02-02T17:48:48.988893",
       "added_from": "scan_results"
     },
     {
-      "symbol": "IIFL",
+      "symbol": "TARC",
+      "period": 14,
+      "trend": "downtrend",
+      "added_at": "2026-02-02T17:48:53.326731",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "TBZ",
       "period": 9,
       "trend": "uptrend",
-      "added_at": "2026-02-01T21:18:11.896823",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "IEX",
-      "period": 15,
-      "trend": "downtrend",
-      "added_at": "2026-02-01T21:18:13.091018",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "HINDZINC",
-      "period": 5,
-      "trend": "uptrend",
-      "added_at": "2026-02-01T21:18:16.013275",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "GODREJPROP",
-      "period": 15,
-      "trend": "downtrend",
-      "added_at": "2026-02-01T21:18:19.962728",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "GKENERGY",
-      "period": 15,
-      "trend": "downtrend",
-      "added_at": "2026-02-01T21:18:25.962650",
+      "added_at": "2026-02-02T17:48:56.678026",
       "added_from": "scan_results"
     }
   ]

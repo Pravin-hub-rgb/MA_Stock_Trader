@@ -191,8 +191,8 @@ class ReversalTickProcessor:
         if self.stock.open_price is None or self.stock.previous_close is None:
             return
         
-        # Strong Start: Enter when price crosses above current high
-        if price >= self.stock.daily_high:
+        # Strong Start: Enter when price crosses above entry_high (high from window)
+        if self.stock.entry_high is not None and price >= self.stock.entry_high:
             self.stock.strong_start_triggered = True
             
             # Set entry_high and entry_sl when Strong Start triggers
