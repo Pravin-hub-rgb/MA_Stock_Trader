@@ -1,45 +1,10 @@
 {
   "stocks": [
     {
-      "symbol": "AGIIL",
-      "period": 15,
-      "trend": "downtrend",
-      "added_at": "2026-02-02T17:48:33.566841",
-      "added_from": "scan_results"
-    },
-    {
       "symbol": "BDL",
-      "period": 4,
+      "period": 5,
       "trend": "uptrend",
-      "added_at": "2026-02-02T17:48:38.349128",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "FEDFINA",
-      "period": 12,
-      "trend": "downtrend",
-      "added_at": "2026-02-02T17:48:43.621504",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "KPIGREEN",
-      "period": 14,
-      "trend": "downtrend",
-      "added_at": "2026-02-02T17:48:48.988893",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "TARC",
-      "period": 14,
-      "trend": "downtrend",
-      "added_at": "2026-02-02T17:48:53.326731",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "TBZ",
-      "period": 9,
-      "trend": "uptrend",
-      "added_at": "2026-02-02T17:48:56.678026",
+      "added_at": "2026-02-03T19:39:00.683537",
       "added_from": "scan_results"
     }
   ]

@@ -1,3 +1,19 @@
 {
-  "stocks": []
+  "stocks": [
+    {
+      "symbol": "EMMVEE",
+      "added_at": "2026-02-03T19:42:11.302346",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "GROWW",
+      "added_at": "2026-02-03T19:42:15.689171",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "BSE",
+      "added_at": "2026-02-03T19:42:32.081721",
+      "added_from": "scan_results"
+    }
+  ]
 }
