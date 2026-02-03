@@ -281,7 +281,7 @@ async def download_file(filename: str):
 async def validate_trading_lists():
     """Validate continuation and reversal lists for live trading readiness"""
     try:
-        from validate_trading_lists import TradingListValidator
+        from src.trading.live_trading.validate_trading_lists import TradingListValidator
 
         validator = TradingListValidator()
 
