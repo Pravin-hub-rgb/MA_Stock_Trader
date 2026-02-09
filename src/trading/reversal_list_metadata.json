@@ -1,11 +1,3 @@
 {
-  "stocks": [
-    {
-      "symbol": "BDL",
-      "period": 5,
-      "trend": "uptrend",
-      "added_at": "2026-02-03T19:39:00.683537",
-      "added_from": "scan_results"
-    }
-  ]
+  "stocks": []
 }

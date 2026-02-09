@@ -189,11 +189,11 @@ class StockState:
 
         # Log detailed volume validation information
         logger.info(f"[{self.symbol}] VOLUME VALIDATION DETAILS:")
-        logger.info(f"   Initial Volume: {self._format_volume(self.initial_volume)}")
-        logger.info(f"   Current Volume: {self._format_volume(self.early_volume)}")
+        logger.info(f"   Current Volume (Cumulative): {self._format_volume(self.early_volume)}")
         
-        # Calculate cumulative volume (current - initial)
-        cumulative_volume = self.early_volume - self.initial_volume
+        # Use early_volume directly as cumulative volume (simplified approach)
+        # Since daily volume starts at 0, early_volume IS the cumulative volume for the session
+        cumulative_volume = self.early_volume
         logger.info(f"   Cumulative Volume: {self._format_volume(cumulative_volume)}")
         
         # Calculate percentage of mean volume baseline
@@ -228,7 +228,10 @@ class StockState:
         self.entry_sl = self.entry_high * (1 - ENTRY_SL_PCT)
 
         self.entry_ready = True
-        logger.info(f"[{self.symbol}] Entry prepared - High: {self.entry_high:.2f}, SL: {self.entry_sl:.2f}")
+        
+        # Enhanced logging for entry price and SL at final waiting time
+        logger.info(f"[{self.symbol}] ENTRY/SL SET AT 9:20 - Entry Price: Rs{self.entry_high:.2f}, SL: Rs{self.entry_sl:.2f}")
+        logger.info(f"[{self.symbol}] Entry/SL Details: High reached = Rs{self.daily_high:.2f}, SL = {ENTRY_SL_PCT*100:.0f}% below entry")
 
     def check_entry_signal(self, price: float) -> bool:
         """Check if price has broken above the entry high"""
@@ -382,8 +385,8 @@ class StockMonitor:
             # Volume validation status with detailed information
             if stock.volume_validated:
                 # Format volume information for display using stock's method
-                # Calculate cumulative volume (current - initial) to match validate_volume() logic
-                cumulative_volume = stock.early_volume - stock.initial_volume
+                # Use early_volume directly as cumulative volume (simplified approach)
+                cumulative_volume = stock.early_volume
                 cumulative_vol_str = stock._format_volume(cumulative_volume)
                 # Use the stored volume baseline from check_volume_validations()
                 volume_baseline = getattr(stock, 'volume_baseline', 0)
@@ -511,36 +514,21 @@ class StockMonitor:
             sys.path.insert(0, parent_dir)
         from src.utils.upstox_fetcher import upstox_fetcher
 
+        # DIRECT VOLUME VALIDATION - No timing logic needed
+        # Just check volume for any qualified stocks that haven't been validated yet
         for stock in self.get_active_stocks():
             if (stock.situation == 'continuation' and stock.gap_validated and
                 stock.low_violation_checked and not stock.volume_validated):
-                # Get current volume using the new volume-only method
+                
+                # Get current volume using the volume-only method
                 try:
                     current_volume = upstox_fetcher.get_current_volume(stock.symbol)
                     if current_volume > 0:
-                        # Calculate cumulative volume (session volume)
-                        cumulative_volume = current_volume - stock.initial_volume
-                        if cumulative_volume < 0:  # Handle volume reset
-                            cumulative_volume = 0
-                        
-                        # CRITICAL: When market is closed, cumulative volume should be 0
-                        # Check if market is currently open
-                        from datetime import datetime, time
-                        import pytz
-                        IST = pytz.timezone('Asia/Kolkata')
-                        current_time = datetime.now(IST).time()
-                        
-                        # Market hours: 9:15 AM to 3:30 PM IST
-                        market_open = time(9, 15)
-                        market_close = time(15, 30)
-                        
-                        if not (market_open <= current_time <= market_close):
-                            # Market is closed, cumulative volume should be 0
-                            cumulative_volume = 0
-                            logger.info(f"[{stock.symbol}] Market closed ({current_time}), setting cumulative volume to 0")
+                        # Use current volume directly as cumulative volume (simplified approach)
+                        # Since daily volume starts at 0, current_volume IS the cumulative volume for the session
+                        cumulative_volume = current_volume
                         
                         # Use the pre-loaded volume baseline from run_continuation.py
-                        # The baseline should already be set in stock.volume_baseline during PREP time
                         volume_baseline = stock.volume_baseline
                         
                         # CRITICAL: If baseline is still 0 or default, show ERROR instead of using fallback
@@ -551,11 +539,16 @@ class StockMonitor:
                             stock.reject("Volume baseline not available - check PREP time loading")
                             continue
                         
-                        # Set the cumulative volume (NOT the total volume)
+                        # Set the cumulative volume (this is the current volume since market open)
                         stock.early_volume = cumulative_volume
                         
                         # Validate volume
                         stock.validate_volume(volume_baseline)
+                        
+                        # Log the volume validation result for debugging
+                        volume_ratio = (cumulative_volume / volume_baseline * 100) if volume_baseline > 0 else 0
+                        logger.info(f"[{stock.symbol}] Volume validation: {volume_ratio:.1f}% ({cumulative_volume:,.0f}) vs baseline {volume_baseline:,.0f}")
+                        
                     else:
                         logger.warning(f"No volume data for {stock.symbol}")
                         stock.reject("No volume data available")

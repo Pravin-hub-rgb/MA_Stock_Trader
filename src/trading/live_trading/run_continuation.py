@@ -8,7 +8,7 @@ Dedicated bot for SVRO continuation trading using 1-minute OHLC data
 import sys
 import os
 import time as time_module
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import pytz
 import psutil
 import portalocker
@@ -79,6 +79,9 @@ def run_continuation_bot():
     print("STARTING CONTINUATION TRADING BOT (OHLC-ONLY)")
     print("=" * 50)
 
+    # Import datetime directly in function scope to avoid import conflicts
+    from datetime import datetime, time, timedelta
+    
     # Import components directly
     sys.path.insert(0, 'src/trading/live_trading')
 
@@ -91,6 +94,7 @@ def run_continuation_bot():
     from volume_profile import volume_profile_calculator
     from src.utils.upstox_fetcher import UpstoxFetcher, iep_manager
     from src.trading.live_trading.continuation_modules.continuation_timing_module import ContinuationTimingManager
+    from src.trading.live_trading.continuation_modules.integration import ContinuationIntegration
     from config import MARKET_OPEN, ENTRY_TIME, PREP_START
 
     # Create components
@@ -153,61 +157,19 @@ def run_continuation_bot():
     # Initialize data streamer
     data_streamer = SimpleStockStreamer(instrument_keys, stock_symbols)
 
-    # Continuation tick handler - OHLC only, no tick processing
+    # CREATE MODULAR INTEGRATION
+    # Create modular integration BEFORE gap validation
+    integration = ContinuationIntegration(data_streamer, monitor, paper_trader)
+
+    # Continuation tick handler - MODULAR ARCHITECTURE
     def tick_handler_continuation(instrument_key, symbol, price, timestamp, ohlc_list=None):
-        """Continuation tick handler - OHLC only, no tick processing"""
-        global global_selected_stocks, global_selected_symbols
+        """
+        Modular continuation tick handler using integration
+        Delegates all logic to individual stocks based on their state
+        """
+        # Use modular integration for tick processing
+        integration.simplified_tick_handler(instrument_key, symbol, price, timestamp, ohlc_list)
 
-        # Process OHLC data only (no tick-based opening price capture)
-        monitor.process_tick(instrument_key, symbol, price, timestamp, ohlc_list)
-
-        # Update price tracking for low violation monitoring
-        stock = monitor.stocks.get(instrument_key)
-        if stock:
-            stock.update_price(price, timestamp)
-
-        # Check violations for opened stocks (continuous monitoring)
-        monitor.check_violations()
-
-        # Check volume validations for continuation stocks
-        monitor.check_volume_validations()
-
-        # Check entry signals only after entry decision time (9:19)
-        current_time = datetime.now(IST).time()
-        if current_time >= ENTRY_TIME and 'global_selected_stocks' in globals() and global_selected_stocks:
-            entry_signals = monitor.check_entry_signals()
-
-            for stock in entry_signals:
-                if stock.symbol in global_selected_symbols:
-                    print(f"ENTRY {stock.symbol} entry triggered at Rs{price:.2f}, SL placed at Rs{stock.entry_sl:.2f}")
-                    stock.enter_position(price, timestamp)
-                    paper_trader.log_entry(stock, price, timestamp)
-
-        # Check exit signals for entered positions
-        if current_time >= ENTRY_TIME:
-            # Check for trailing stop adjustments (5% profit -> move SL to entry)
-            for stock in monitor.stocks.values():
-                if stock.entered and stock.entry_price and stock.current_price:
-                    profit_pct = (stock.current_price - stock.entry_price) / stock.entry_price
-                    if profit_pct >= 0.05:  # 5% profit
-                        new_sl = stock.entry_price  # Move SL to breakeven
-                        if stock.entry_sl < new_sl:
-                            old_sl = stock.entry_sl
-                            stock.entry_sl = new_sl
-                            print(f"TRAILING {stock.symbol} trailing stop adjusted: Rs{old_sl:.2f} -> Rs{new_sl:.2f} (5% profit)")
-
-            # Check exit signals (including updated trailing stops)
-            exit_signals = monitor.check_exit_signals()
-            for stock in exit_signals:
-                pnl = (price - stock.entry_price) / stock.entry_price * 100
-                print(f"EXIT {stock.symbol} exited at Rs{price:.2f}, PNL: {pnl:+.2f}%")
-                stock.exit_position(price, timestamp, "Stop Loss Hit")
-                paper_trader.log_exit(stock, price, timestamp, "Stop Loss Hit")
-
-    # Initialize global variables for tick handler
-    global_selected_stocks = []
-    global_selected_symbols = set()
-    
     # Set the continuation tick handler
     data_streamer.tick_handler = tick_handler_continuation
 
@@ -344,19 +306,7 @@ def run_continuation_bot():
                     time_module.sleep(wait_seconds)
 
             print("MARKET OPEN! Monitoring live OHLC data...")
-
-            # Capture initial volume at market open for cumulative tracking
-            print("CAPTURING initial volume at market open for cumulative tracking...")
-            for stock in monitor.stocks.values():
-                try:
-                    initial_volume = upstox_fetcher.get_current_volume(stock.symbol)
-                    if initial_volume > 0:
-                        stock.initial_volume = initial_volume
-                        print(f"Initial volume captured for {stock.symbol}: {initial_volume:,}")
-                    else:
-                        print(f"WARNING: No initial volume for {stock.symbol}")
-                except Exception as e:
-                    print(f"ERROR capturing initial volume for {stock.symbol}: {e}")
+            print("NO initial volume capture needed - using current volume directly as cumulative")
 
             # For continuation: IEP-based opening prices (already set at 9:14:30)
             print("USING IEP-BASED OPENING PRICES - Set at 9:14:30 from pre-market IEP")
@@ -419,21 +369,26 @@ def run_continuation_bot():
                         if hasattr(stock, 'validate_vah_rejection'):
                             stock.validate_vah_rejection(vah_price)
             
+            # Check for low violations and volume validations
+            print("=== CHECKING LOW VIOLATIONS AND VOLUME VALIDATIONS ===")
+            monitor.check_violations()
+            monitor.check_volume_validations()
+            
             monitor.prepare_entries()
 
             qualified_stocks = monitor.get_qualified_stocks()
             print(f"Qualified stocks: {len(qualified_stocks)}")
 
-            selected_stocks = selection_engine.select_stocks(qualified_stocks)
-            print(f"Selected stocks: {[s.symbol for s in selected_stocks]}")
-
-            # Mark selected stocks as ready
-            for stock in selected_stocks:
+            # FIRST COME, FIRST SERVE: Mark ALL qualified stocks as ready
+            # No pre-selection bottleneck - all qualified stocks can trade
+            for stock in qualified_stocks:
                 stock.entry_ready = True
                 print(f"READY to trade: {stock.symbol} (Entry: Rs{stock.entry_high:.2f}, SL: Rs{stock.entry_sl:.2f})")
 
-            # Initialize selected_stocks for the tick handler
-            global_selected_symbols = {stock.symbol for stock in selected_stocks}
+            # USE MODULAR SUBSCRIPTION MANAGEMENT
+            # Subscribe all qualified stocks and let the integration handle dynamic management
+            integration.prepare_and_subscribe(instrument_keys)
+            print(f"MODULAR SUBSCRIPTION: All {len(qualified_stocks)} qualified stocks subscribed")
 
             # Keep monitoring for entries, exits, and trailing stops
             print("\nMONITORING for entry/exit signals...")

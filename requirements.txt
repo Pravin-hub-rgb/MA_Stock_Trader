@@ -15,6 +15,11 @@ PyQt6>=6.4.0
 requests>=2.28.0
 websocket-client>=1.4.0
 
+# Web Server (FastAPI)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
 # Database
 sqlalchemy>=1.4.0
 

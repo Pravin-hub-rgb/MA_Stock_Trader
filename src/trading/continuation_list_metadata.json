@@ -1,18 +1,33 @@
 {
   "stocks": [
     {
-      "symbol": "EMMVEE",
-      "added_at": "2026-02-03T19:42:11.302346",
+      "symbol": "ANGELONE",
+      "added_at": "2026-02-08T20:07:45.812750",
       "added_from": "scan_results"
     },
     {
-      "symbol": "GROWW",
-      "added_at": "2026-02-03T19:42:15.689171",
+      "symbol": "CUPID",
+      "added_at": "2026-02-08T20:08:11.061407",
       "added_from": "scan_results"
     },
     {
       "symbol": "BSE",
-      "added_at": "2026-02-03T19:42:32.081721",
+      "added_at": "2026-02-08T20:08:12.278179",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "DCBBANK",
+      "added_at": "2026-02-08T20:08:19.954757",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "GROWW",
+      "added_at": "2026-02-08T20:08:25.316221",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "UNIONBANK",
+      "added_at": "2026-02-08T20:08:40.624125",
       "added_from": "scan_results"
     }
   ]
