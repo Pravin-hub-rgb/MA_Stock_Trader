@@ -1,33 +1,63 @@
 {
   "stocks": [
     {
-      "symbol": "ANGELONE",
-      "added_at": "2026-02-08T20:07:45.812750",
+      "symbol": "ADANIPOWER",
+      "added_at": "2026-02-10T18:42:59.615485",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "AWHCL",
+      "added_at": "2026-02-10T18:43:01.232872",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "CUBEXTUB",
+      "added_at": "2026-02-10T18:43:05.158352",
       "added_from": "scan_results"
     },
     {
       "symbol": "CUPID",
-      "added_at": "2026-02-08T20:08:11.061407",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "BSE",
-      "added_at": "2026-02-08T20:08:12.278179",
+      "added_at": "2026-02-10T18:43:08.113018",
       "added_from": "scan_results"
     },
     {
       "symbol": "DCBBANK",
-      "added_at": "2026-02-08T20:08:19.954757",
+      "added_at": "2026-02-10T18:43:12.559090",
       "added_from": "scan_results"
     },
     {
       "symbol": "GROWW",
-      "added_at": "2026-02-08T20:08:25.316221",
+      "added_at": "2026-02-10T18:43:13.485856",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "HINDCOPPER",
+      "added_at": "2026-02-10T18:43:19.806502",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "MOSCHIP",
+      "added_at": "2026-02-10T18:43:25.334704",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PATELRMART",
+      "added_at": "2026-02-10T18:43:31.032023",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "REDTAPE",
+      "added_at": "2026-02-10T18:43:34.727394",
       "added_from": "scan_results"
     },
     {
       "symbol": "UNIONBANK",
-      "added_at": "2026-02-08T20:08:40.624125",
+      "added_at": "2026-02-10T18:43:38.512000",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "WALCHANNAG",
+      "added_at": "2026-02-10T18:43:39.015904",
       "added_from": "scan_results"
     }
   ]
