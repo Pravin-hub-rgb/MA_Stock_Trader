@@ -2,62 +2,77 @@
   "stocks": [
     {
       "symbol": "ADANIPOWER",
-      "added_at": "2026-02-10T18:42:59.615485",
+      "added_at": "2026-02-12T21:16:16.212386",
       "added_from": "scan_results"
     },
     {
-      "symbol": "AWHCL",
-      "added_at": "2026-02-10T18:43:01.232872",
+      "symbol": "ANGELONE",
+      "added_at": "2026-02-12T21:16:17.740529",
       "added_from": "scan_results"
     },
     {
-      "symbol": "CUBEXTUB",
-      "added_at": "2026-02-10T18:43:05.158352",
+      "symbol": "ELECON",
+      "added_at": "2026-02-12T21:16:20.291752",
       "added_from": "scan_results"
     },
     {
-      "symbol": "CUPID",
-      "added_at": "2026-02-10T18:43:08.113018",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "DCBBANK",
-      "added_at": "2026-02-10T18:43:12.559090",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "GROWW",
-      "added_at": "2026-02-10T18:43:13.485856",
+      "symbol": "GRSE",
+      "added_at": "2026-02-12T21:16:23.823267",
       "added_from": "scan_results"
     },
     {
       "symbol": "HINDCOPPER",
-      "added_at": "2026-02-10T18:43:19.806502",
+      "added_at": "2026-02-12T21:16:27.147954",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "MIDHANI",
+      "added_at": "2026-02-12T21:16:32.551594",
       "added_from": "scan_results"
     },
     {
       "symbol": "MOSCHIP",
-      "added_at": "2026-02-10T18:43:25.334704",
+      "added_at": "2026-02-12T21:16:36.736392",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "NAVNETEDUL",
+      "added_at": "2026-02-12T21:16:41.477396",
       "added_from": "scan_results"
     },
     {
       "symbol": "PATELRMART",
-      "added_at": "2026-02-10T18:43:31.032023",
+      "added_at": "2026-02-12T21:16:46.965408",
       "added_from": "scan_results"
     },
     {
-      "symbol": "REDTAPE",
-      "added_at": "2026-02-10T18:43:34.727394",
+      "symbol": "PICCADIL",
+      "added_at": "2026-02-12T21:16:50.216304",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "ROSSTECH",
+      "added_at": "2026-02-12T21:16:56.944714",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "SHANTIGOLD",
+      "added_at": "2026-02-12T21:17:01.976363",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "SHRINGARMS",
+      "added_at": "2026-02-12T21:17:07.425007",
       "added_from": "scan_results"
     },
     {
       "symbol": "UNIONBANK",
-      "added_at": "2026-02-10T18:43:38.512000",
+      "added_at": "2026-02-12T21:17:11.905480",
       "added_from": "scan_results"
     },
     {
       "symbol": "WALCHANNAG",
-      "added_at": "2026-02-10T18:43:39.015904",
+      "added_at": "2026-02-12T21:17:13.831476",
       "added_from": "scan_results"
     }
   ]

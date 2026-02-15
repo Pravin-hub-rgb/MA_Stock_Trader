@@ -72,6 +72,115 @@ class ContinuationSubscriptionManager:
                 self.mark_stocks_unsubscribed(remaining_keys)
                 
                 self.log_subscription_status()
+
+    def unsubscribe_gap_and_vah_rejected(self):
+        """
+        Phase 1: Unsubscribe stocks that failed gap validation or VAH validation
+        Called immediately after gap validation at 9:14:30
+        
+        Follows reversal bot pattern: Fully unsubscribe rejected stocks
+        so they disappear from monitoring completely
+        """
+        gap_vah_rejected = []
+        gap_failed_stocks = []
+        vah_failed_stocks = []
+        
+        for stock in self.monitor.stocks.values():
+            if stock.instrument_key in self.subscribed_keys:
+                # Check if stock failed gap validation
+                gap_failed = not stock.gap_validated
+                
+                # Check if stock failed VAH validation (continuation only)
+                vah_failed = False
+                if stock.situation == 'continuation':
+                    # Check if stock has opening price and VAH price, and if opening is below VAH
+                    if (hasattr(stock, 'open_price') and stock.open_price is not None and 
+                        hasattr(stock, 'vah_price') and stock.vah_price is not None):
+                        if stock.open_price < stock.vah_price:
+                            vah_failed = True
+                
+                if gap_failed or vah_failed:
+                    gap_vah_rejected.append(stock)
+                    if gap_failed:
+                        gap_failed_stocks.append(stock)
+                    if vah_failed:
+                        vah_failed_stocks.append(stock)
+        
+        if gap_vah_rejected:
+            rejected_keys = [stock.instrument_key for stock in gap_vah_rejected]
+            print(f"\n=== PHASE 1: UNSUBSCRIBING GAP+VAH REJECTED STOCKS ===")
+            print(f"Unsubscribing {len(gap_vah_rejected)} stocks: {[s.symbol for s in gap_vah_rejected]}")
+            
+            # Log individual stock unsubscriptions with detailed reasons
+            print(f"\nSTOCKS BEING UNSUBSCRIBED:")
+            for stock in gap_vah_rejected:
+                reason = ""
+                if not stock.gap_validated:
+                    reason = "Gap validation failed"
+                elif (stock.situation == 'continuation' and 
+                      hasattr(stock, 'open_price') and stock.open_price is not None and 
+                      hasattr(stock, 'vah_price') and stock.vah_price is not None and
+                      stock.open_price < stock.vah_price):
+                    reason = f"VAH validation failed (Opening price {stock.open_price:.2f} < VAH {stock.vah_price:.2f})"
+                
+                print(f"   UNSUBSCRIBING {stock.symbol} - Reason: {reason}")
+            
+            # Log breakdown by rejection type
+            if gap_failed_stocks:
+                print(f"\nGAP VALIDATION FAILED ({len(gap_failed_stocks)} stocks):")
+                for stock in gap_failed_stocks:
+                    print(f"   - {stock.symbol}")
+            
+            if vah_failed_stocks:
+                print(f"\nVAH VALIDATION FAILED ({len(vah_failed_stocks)} stocks):")
+                for stock in vah_failed_stocks:
+                    print(f"   - {stock.symbol} (Open: {stock.open_price:.2f}, VAH: {stock.vah_price:.2f})")
+            
+            # Show remaining subscribed stocks
+            remaining_subscribed = [stock for stock in self.monitor.stocks.values() 
+                                  if stock.instrument_key in self.subscribed_keys and stock not in gap_vah_rejected]
+            if remaining_subscribed:
+                print(f"\nSTOCKS REMAINING SUBSCRIBED ({len(remaining_subscribed)} stocks):")
+                for stock in remaining_subscribed:
+                    print(f"   - {stock.symbol}")
+            else:
+                print(f"\nNO STOCKS REMAINING SUBSCRIBED - All stocks rejected")
+            
+            # Follow reversal bot pattern: Fully unsubscribe rejected stocks
+            self.safe_unsubscribe(rejected_keys, "gap_vah_rejected")
+            self.mark_stocks_unsubscribed(rejected_keys)
+            
+            self.log_subscription_status()
+
+    def unsubscribe_low_and_volume_failed(self):
+        """
+        Phase 2: Unsubscribe stocks that failed low violation check or volume validation
+        Called at 9:20 after all validations are complete
+        """
+        low_volume_failed = []
+        
+        for stock in self.monitor.stocks.values():
+            if stock.instrument_key in self.subscribed_keys:
+                # Check if stock failed low violation check
+                low_failed = stock.low_violation_checked and not stock.is_active
+                
+                # Check if stock failed volume validation (continuation only)
+                volume_failed = False
+                if stock.situation == 'continuation':
+                    volume_failed = stock.volume_validated and not stock.is_active
+                
+                if low_failed or volume_failed:
+                    low_volume_failed.append(stock)
+        
+        if low_volume_failed:
+            failed_keys = [stock.instrument_key for stock in low_volume_failed]
+            logger.info(f"\n=== PHASE 2: UNSUBSCRIBING LOW+VOLUME FAILED STOCKS ===")
+            logger.info(f"Unsubscribing {len(low_volume_failed)} stocks: {[s.symbol for s in low_volume_failed]}")
+            
+            self.safe_unsubscribe(failed_keys, "low_volume_failed")
+            self.mark_stocks_unsubscribed(failed_keys)
+            
+            self.log_subscription_status()
     
     def safe_unsubscribe(self, instrument_keys: List[str], reason: str = "manual"):
         """
@@ -108,6 +217,7 @@ class ContinuationSubscriptionManager:
             stock = self.monitor.stocks.get(key)
             if stock:
                 stock.is_active = False
+                stock.is_subscribed = False  # CRITICAL FIX: Set is_subscribed to False
                 stock.rejection_reason = "Unsubscribed after 2 positions filled"
                 logger.info(f"Marked {stock.symbol} as unsubscribed")
     

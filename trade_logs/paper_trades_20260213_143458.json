@@ -1,0 +1,28 @@
+[
+  {
+    "timestamp": "2026-02-13T14:35:31.734524+05:30",
+    "type": "ENTRY",
+    "symbol": "SHANTIGOLD",
+    "instrument_key": "NSE_EQ|INE06ZD01017",
+    "entry_price": 219.55,
+    "entry_high": 219.55,
+    "stop_loss": 210.77,
+    "open_price": 219.55,
+    "previous_close": 217.93,
+    "gap_pct": 0.74,
+    "session": "20260213_143458"
+  },
+  {
+    "timestamp": "2026-02-13T14:35:31.734524+05:30",
+    "type": "ENTRY",
+    "symbol": "ROSSTECH",
+    "instrument_key": "NSE_EQ|INE0OJW01016",
+    "entry_price": 717.3,
+    "entry_high": 717.3,
+    "stop_loss": 688.61,
+    "open_price": 717.3,
+    "previous_close": 712.55,
+    "gap_pct": 0.67,
+    "session": "20260213_143458"
+  }
+]

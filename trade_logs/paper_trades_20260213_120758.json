@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2026-02-13T12:10:00.625172+05:30",
+    "type": "ENTRY",
+    "symbol": "ROSSTECH",
+    "instrument_key": "NSE_EQ|INE0OJW01016",
+    "entry_price": 724.3,
+    "entry_high": 724.3,
+    "stop_loss": 695.33,
+    "open_price": 724.3,
+    "previous_close": 712.55,
+    "gap_pct": 1.65,
+    "session": "20260213_120758"
+  }
+]

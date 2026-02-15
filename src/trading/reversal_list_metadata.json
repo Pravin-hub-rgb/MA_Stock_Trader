@@ -2,23 +2,23 @@
   "stocks": [
     {
       "symbol": "CUBEXTUB",
-      "period": 9,
+      "period": 10,
       "trend": "uptrend",
-      "added_at": "2026-02-10T18:45:08.085264",
+      "added_at": "2026-02-11T18:13:03.832095",
       "added_from": "scan_results"
     },
     {
       "symbol": "INTELLECT",
-      "period": 10,
+      "period": 11,
       "trend": "downtrend",
-      "added_at": "2026-02-10T18:45:10.302582",
+      "added_at": "2026-02-11T18:13:08.915930",
       "added_from": "scan_results"
     },
     {
       "symbol": "PWL",
-      "period": 13,
+      "period": 14,
       "trend": "downtrend",
-      "added_at": "2026-02-10T18:45:15.019876",
+      "added_at": "2026-02-11T18:13:18.147005",
       "added_from": "scan_results"
     }
   ]

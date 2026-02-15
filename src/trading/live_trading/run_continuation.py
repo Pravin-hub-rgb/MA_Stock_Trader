@@ -280,6 +280,17 @@ def run_continuation_bot():
                             print(f"Gap validated for {symbol}")
                         else:
                             print(f"Gap validation failed for {symbol}")
+                    
+                    # IMMEDIATELY check VAH validation (since we have VAH values from 8:36:51)
+                    if global_vah_dict and stock.symbol in global_vah_dict:
+                        vah_price = global_vah_dict[stock.symbol]
+                        if hasattr(stock, 'validate_vah_rejection'):
+                            stock.validate_vah_rejection(vah_price)
+                            # LOG VAH validation result
+                            if stock.is_active:
+                                print(f"VAH validated for {symbol}")
+                            else:
+                                print(f"VAH validation failed for {symbol} (Opening price {stock.open_price:.2f} < VAH {vah_price:.2f})")
                 else:
                     print(f"Stock not found for symbol: {symbol}")
         else:
@@ -312,6 +323,70 @@ def run_continuation_bot():
             print("USING IEP-BASED OPENING PRICES - Set at 9:14:30 from pre-market IEP")
             print("Gap validation completed at 9:14:30, ready for trading")
 
+            # Log comprehensive stock status before Phase 1 unsubscription
+            print("\n=== CONTINUATION STOCK STATUS BEFORE PHASE 1 UNSUBSCRIPTION ===")
+            
+            # Check all stocks individually
+            gap_failed_stocks = []
+            vah_failed_stocks = []
+            rejected_stocks = []
+            
+            for stock in monitor.stocks.values():
+                # Track specific failure types
+                if not stock.gap_validated:
+                    gap_failed_stocks.append(stock)
+                if not stock.is_active and stock.rejection_reason and "VAH" in stock.rejection_reason:
+                    vah_failed_stocks.append(stock)
+                if not stock.is_active:
+                    rejected_stocks.append(stock)
+            
+            print(f"TOTAL STOCKS: {len(monitor.stocks)}")
+            
+            if gap_failed_stocks:
+                print(f"\nUNSUBSCRIBED DUE TO GAP REJECTION ({len(gap_failed_stocks)}):")
+                for stock in gap_failed_stocks:
+                    gap_pct = 0.0
+                    if stock.open_price and stock.previous_close:
+                        gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
+                    print(f"   - {stock.symbol} (Gap: {gap_pct:+.2f}%)")
+            
+            if vah_failed_stocks:
+                print(f"\nUNSUBSCRIBED DUE TO VAH REJECTION ({len(vah_failed_stocks)}):")
+                for stock in vah_failed_stocks:
+                    if stock.open_price and stock.rejection_reason and "VAH" in stock.rejection_reason:
+                        # Extract VAH price from rejection reason
+                        vah_price = stock.rejection_reason.split("VAH ")[1].split(")")[0] if "VAH " in stock.rejection_reason else "Unknown"
+                        print(f"   - {stock.symbol} (Opening: {stock.open_price:.2f} < VAH: {vah_price})")
+            
+            # Find still subscribed stocks
+            active_stocks = [s for s in monitor.stocks.values() if s.is_active]
+            if active_stocks:
+                print(f"\nSTILL SUBSCRIBED ({len(active_stocks)}):")
+                for stock in active_stocks:
+                    gap_pct = 0.0
+                    if stock.open_price and stock.previous_close:
+                        gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
+                    vah_status = "FAILED" if (hasattr(stock, 'vah_validated') and not stock.vah_validated) else "VALIDATED"
+                    print(f"   - {stock.symbol} (Gap: {gap_pct:+.2f}%, VAH: {vah_status})")
+            
+            print(f"\nPHASE 1 UNSUBSCRIPTION: Removing {len(rejected_stocks)} rejected stocks from WebSocket")
+
+            # PHASE 1: UNSUBSCRIBE GAP+VAH REJECTED STOCKS
+            # This happens immediately after WebSocket connection at market open
+            print("\n=== PHASE 1: UNSUBSCRIBING GAP+VAH REJECTED STOCKS ===")
+            integration.phase_1_unsubscribe_after_gap_and_vah()
+            
+            # DEBUG: Log subscription status after Phase 1 unsubscription
+            print("\n=== DEBUG: SUBSCRIPTION STATUS AFTER PHASE 1 UNSUBSCRIPTION ===")
+            active_stocks_after = monitor.get_active_stocks()
+            print(f"Active stocks after unsubscription: {len(active_stocks_after)}")
+            if active_stocks_after:
+                print("Remaining active stocks:")
+                for stock in active_stocks_after:
+                    print(f"   - {stock.symbol}")
+            else:
+                print("No active stocks remaining")
+
             # Continue with normal entry decision timing
             entry_decision_time = ENTRY_TIME
             current_time = datetime.now(IST).time()
@@ -328,9 +403,24 @@ def run_continuation_bot():
             # Prepare entries and select stocks
             print("\n=== PREPARING ENTRIES ===")
 
-            # Show current status after OHLC-based qualification
-            print("POST-OHLC QUALIFICATION STATUS:")
-            for stock in monitor.stocks.values():
+            # VAH validation already applied immediately after gap validation at 9:14:30
+            # No need to apply again here
+            
+            # Check for low violations and volume validations BEFORE showing status
+            print("=== CHECKING LOW VIOLATIONS AND VOLUME VALIDATIONS ===")
+            monitor.check_violations()
+            monitor.check_volume_validations()
+            
+            # PHASE 2: UNSUBSCRIBE LOW+VOLUME FAILED STOCKS
+            # This happens at 9:20 after all validations are complete
+            integration.phase_2_unsubscribe_after_low_and_volume()
+            
+            # Log final subscription status after Phase 2
+            integration.log_final_subscription_status()
+            
+            # NOW show the status AFTER all checks are done (with actual values)
+            print("POST-VALIDATION STATUS (all checks completed):")
+            for stock in monitor.get_active_stocks():
                 open_status = f"Open: Rs{stock.open_price:.2f}" if stock.open_price else "No opening price"
 
                 gap_pct = 0.0
@@ -338,17 +428,37 @@ def run_continuation_bot():
                     gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
 
                 gap_status = "Gap validated" if stock.gap_validated else f"Gap: {gap_pct:+.2f}%"
-                low_status = "Low checked" if stock.low_violation_checked else "Low not checked"
-                # Format volume status with detailed information
+                
+                # Enhanced low status with actual low value
+                if stock.low_violation_checked:
+                    if stock.daily_low != float('inf') and stock.open_price:
+                        low_pct = ((stock.daily_low - stock.open_price) / stock.open_price) * 100
+                        low_status = f"Low: Rs{stock.daily_low:.2f} ({low_pct:+.2f}% from open) - PASSED"
+                    else:
+                        low_status = "Low checked - PASSED"
+                else:
+                    if not stock.is_active and stock.rejection_reason and "Low violation" in stock.rejection_reason:
+                        low_status = f"Low: Rs{stock.daily_low:.2f} - FAILED (rejected)"
+                    else:
+                        low_status = "Low not checked"
+                
+                # Enhanced volume status with actual volume %
                 if stock.volume_validated and stock.early_volume and stock.volume_baseline:
-                    # Calculate volume ratio for display
                     volume_ratio = (stock.early_volume / stock.volume_baseline * 100) if stock.volume_baseline > 0 else 0
-                    # Format volume numbers with K suffix
                     cumulative_vol_str = f"{stock.early_volume/1000:.1f}K" if stock.early_volume >= 1000 else f"{stock.early_volume:,}"
                     baseline_vol_str = f"{stock.volume_baseline/1000:.1f}K" if stock.volume_baseline >= 1000 else f"{stock.volume_baseline:,}"
-                    volume_status = f"Volume validated {volume_ratio:.1f}% ({cumulative_vol_str}) >= 7.5% of ({baseline_vol_str})"
+                    volume_status = f"Volume: {volume_ratio:.1f}% ({cumulative_vol_str} of {baseline_vol_str}) - PASSED"
                 else:
-                    volume_status = "Volume not checked"
+                    if not stock.is_active and stock.rejection_reason and ("volume" in stock.rejection_reason.lower() or "SVRO" in stock.rejection_reason):
+                        if stock.early_volume and stock.volume_baseline:
+                            volume_ratio = (stock.early_volume / stock.volume_baseline * 100) if stock.volume_baseline > 0 else 0
+                            cumulative_vol_str = f"{stock.early_volume/1000:.1f}K" if stock.early_volume >= 1000 else f"{stock.early_volume:,}"
+                            baseline_vol_str = f"{stock.volume_baseline/1000:.1f}K" if stock.volume_baseline >= 1000 else f"{stock.volume_baseline:,}"
+                            volume_status = f"Volume: {volume_ratio:.1f}% ({cumulative_vol_str} of {baseline_vol_str}) - FAILED (rejected)"
+                        else:
+                            volume_status = "Volume: FAILED (rejected)"
+                    else:
+                        volume_status = "Volume not checked"
 
                 situation_desc = {
                     'continuation': 'Cont',
@@ -359,20 +469,6 @@ def run_continuation_bot():
                     rejection_info = f" | REJECTED: {stock.rejection_reason}"
 
                 print(f"   {stock.symbol} ({situation_desc}): {open_status} | {gap_status} | {low_status} | {volume_status}{rejection_info}")
-
-            # Apply VAH validation for continuation stocks
-            print("=== APPLYING VAH VALIDATION ===")
-            if global_vah_dict:
-                for stock in monitor.stocks.values():
-                    if stock.situation == 'continuation' and stock.symbol in global_vah_dict:
-                        vah_price = global_vah_dict[stock.symbol]
-                        if hasattr(stock, 'validate_vah_rejection'):
-                            stock.validate_vah_rejection(vah_price)
-            
-            # Check for low violations and volume validations
-            print("=== CHECKING LOW VIOLATIONS AND VOLUME VALIDATIONS ===")
-            monitor.check_violations()
-            monitor.check_volume_validations()
             
             monitor.prepare_entries()
 

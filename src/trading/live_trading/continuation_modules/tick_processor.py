@@ -35,6 +35,9 @@ class ContinuationTickProcessor:
             price: Current price for THIS stock
             timestamp: Tick timestamp
         """
+        # DEBUG: Check if ticks are reaching the tick processor
+        print(f"[TICK PROCESSOR] {timestamp.strftime('%H:%M:%S')} - {self.stock.symbol}: Processing tick Rs{price:.2f}")
+        
         # Always update price tracking regardless of state
         self.stock.update_price(price, timestamp)
         
@@ -63,17 +66,27 @@ class ContinuationTickProcessor:
             price: Current price for THIS stock
             timestamp: Current timestamp
         """
-        # Continuation stocks need to track entry high as price moves higher
-        # Update entry high as price moves higher
-        if self.stock.daily_high > self.stock.open_price:
+        # DEBUG: Log the tracking process
+        print(f"[TRACKING] {timestamp.strftime('%H:%M:%S')} - {self.stock.symbol}: Price Rs{price:.2f}, Daily High: Rs{self.stock.daily_high:.2f}, Open: Rs{self.stock.open_price:.2f}")
+        
+        # Always update daily high/low tracking
+        self.stock.daily_high = max(self.stock.daily_high, price)
+        self.stock.daily_low = min(self.stock.daily_low, price)
+        
+        # For continuation stocks, entry high should be the daily high
+        # This allows tracking of actual price movement during the session
+        if self.stock.daily_high > 0:  # Ensure we have a valid high
             new_entry_high = self.stock.daily_high
             new_entry_sl = new_entry_high * (1 - 0.04)  # 4% SL
             
-            # Only update if entry high has increased
-            if self.stock.entry_high is None or new_entry_high > self.stock.entry_high:
+            # Update entry levels if they've changed
+            if (self.stock.entry_high is None or 
+                new_entry_high != self.stock.entry_high or
+                new_entry_sl != self.stock.entry_sl):
                 self.stock.entry_high = new_entry_high
                 self.stock.entry_sl = new_entry_sl
                 self.stock.entry_ready = True
+                print(f"[TRACKING] {timestamp.strftime('%H:%M:%S')} - {self.stock.symbol}: Updated Entry High: Rs{self.stock.entry_high:.2f}, SL: Rs{self.stock.entry_sl:.2f}")
                 logger.info(f"[{self.stock.symbol}] Continuation entry updated - High: {self.stock.entry_high:.2f}, SL: {self.stock.entry_sl:.2f}")
 
     def _handle_entry_monitoring(self, price: float, timestamp: datetime):

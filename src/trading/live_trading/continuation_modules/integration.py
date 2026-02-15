@@ -52,13 +52,25 @@ class ContinuationIntegration:
             timestamp: Tick timestamp
             ohlc_list: OHLC data (optional)
         """
+        # DEBUG: Check if ticks are arriving
+        print(f"[TICK DEBUG] {timestamp.strftime('%H:%M:%S')} - {symbol}: Rs{price:.2f}")
+        
         # Get stock
         stock = self.monitor.stocks.get(instrument_key)
         if not stock:
             return
         
-        # Early exit for unsubscribed stocks
-        if stock.instrument_key not in self.subscription_manager.subscribed_keys:
+        # Early exit for unsubscribed stocks (follow reversal bot pattern)
+        # This ensures gap-rejected stocks disappear completely from monitoring
+        if not stock.is_subscribed:
+            return
+        
+        # Process OHLC data first (for reliable opening price and high/low tracking)
+        if ohlc_list:
+            self.monitor.process_candle_data(instrument_key, symbol, ohlc_list)
+        
+        # Early exit for rejected stocks (don't process tick data)
+        if not stock.is_active:
             return
         
         # Get tick processor for this stock
@@ -85,8 +97,9 @@ class ContinuationIntegration:
             price: Current price
             timestamp: Current timestamp
         """
-        # Log paper trades if stock just entered
-        if stock.entered and stock.entry_time and abs((stock.entry_time - timestamp).total_seconds()) < 1:
+        # Log paper trades if stock just entered (only log once using entry_logged flag)
+        if stock.entered and not stock.entry_logged and stock.entry_time:
+            stock.entry_logged = True  # Mark as logged to prevent duplicates
             if self.paper_trader:
                 self.paper_trader.log_entry(stock, price, timestamp)
             try:
@@ -122,6 +135,20 @@ class ContinuationIntegration:
         
         # Log subscription status
         self.subscription_manager.log_subscription_status()
+
+    def phase_1_unsubscribe_after_gap_and_vah(self):
+        """
+        Phase 1: Unsubscribe stocks that failed gap validation or VAH validation
+        Called immediately after gap validation at 9:14:30
+        """
+        self.subscription_manager.unsubscribe_gap_and_vah_rejected()
+
+    def phase_2_unsubscribe_after_low_and_volume(self):
+        """
+        Phase 2: Unsubscribe stocks that failed low violation check or volume validation
+        Called at 9:20 after all validations are complete
+        """
+        self.subscription_manager.unsubscribe_low_and_volume_failed()
     
     def log_final_subscription_status(self):
         """Log final subscription status"""

@@ -34,6 +34,7 @@ class StockState:
         self.instrument_key = instrument_key
         self.previous_close = previous_close
         self.situation = situation  # 'continuation', 'reversal_s1', 'reversal_s2'
+        self.is_subscribed = True  # Track subscription status
 
         # Market data
         self.open_price: Optional[float] = None
@@ -49,6 +50,7 @@ class StockState:
         self.volume_validated = False  # SVRO relative volume requirement
         self.entry_ready = False
         self.entered = False
+        self.entry_logged = False  # Track if entry was already logged
 
         # Reversal-specific flags (OOPS system)
         self.oops_triggered = False
@@ -134,6 +136,9 @@ class StockState:
         # Only apply VAH validation for continuation stocks
         if self.situation != 'continuation':
             return True
+
+        # Store VAH price for subscription manager to check
+        self.vah_price = vah_price
 
         if self.open_price < vah_price:
             self.reject(f"Opening price {self.open_price:.2f} < VAH {vah_price:.2f}")
@@ -269,6 +274,7 @@ class StockState:
     def reject(self, reason: str):
         """Mark stock as rejected"""
         self.is_active = False
+        self.is_subscribed = False  # Stop processing data immediately
         self.rejection_reason = reason
         logger.info(f"[{self.symbol}] REJECTED: {reason}")
 
