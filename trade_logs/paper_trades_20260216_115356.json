@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2026-02-16T11:56:01.370765+05:30",
+    "type": "ENTRY",
+    "symbol": "DATAPATTNS",
+    "instrument_key": "NSE_EQ|INE0IX101010",
+    "entry_price": 2834.9,
+    "entry_high": 2834.9,
+    "stop_loss": 2721.5,
+    "open_price": 2834.0,
+    "previous_close": 2768.8,
+    "gap_pct": 2.35,
+    "session": "20260216_115356"
+  }
+]

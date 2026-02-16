@@ -32,6 +32,12 @@ class SimpleStockStreamer:
         self.last_disconnection_time = None
         self.reconnection_reason = None
 
+        # Track active subscriptions - only these will be re-subscribed on reconnection
+        self.active_instruments = set(instrument_keys.copy())
+        
+        # Track intentional disconnections to prevent unwanted reconnections
+        self.intentional_disconnect = False
+        
         # Load access token directly
         config_file = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'upstox_config.json')
         with open(config_file, 'r') as f:
@@ -39,6 +45,30 @@ class SimpleStockStreamer:
         self.access_token = config['access_token']
 
         logger.info(f"Simple streamer monitoring {len(instrument_keys)} stocks")
+    
+    def update_active_instruments(self, new_instrument_keys):
+        """
+        Update the active instruments list to only include validated stocks
+        This fixes the subscription tracking discrepancy
+        
+        Args:
+            new_instrument_keys: List of instrument keys to track (only validated stocks)
+        """
+        self.active_instruments = set(new_instrument_keys)
+        logger.info(f"Updated active instruments to {len(new_instrument_keys)} validated stocks")
+        print(f"Active instruments updated to {len(new_instrument_keys)} validated stocks")
+    
+    def update_active_instruments_reversal(self, new_instrument_keys):
+        """
+        Update the active instruments list to only include gap-validated stocks for reversal bot
+        This fixes the subscription tracking discrepancy
+        
+        Args:
+            new_instrument_keys: List of instrument keys to track (only gap-validated stocks)
+        """
+        self.active_instruments = set(new_instrument_keys)
+        logger.info(f"Updated active instruments to {len(new_instrument_keys)} gap-validated stocks")
+        print(f"Active instruments updated to {len(new_instrument_keys)} gap-validated stocks")
 
     def on_message(self, message):
         """Handle WebSocket messages"""
@@ -121,9 +151,10 @@ class SimpleStockStreamer:
         time.sleep(1)
 
         try:
-            # Subscribe to full mode (includes both LTP and OHLC data)
-            self.streamer.subscribe(self.instrument_keys, "full")
-            print(f"Subscribed to {len(self.instrument_keys)} instruments in 'full' mode (LTP + OHLC) at {datetime.now(IST).strftime('%H:%M:%S')}")
+            # Subscribe only to active instruments (those not unsubscribed)
+            active_list = list(self.active_instruments)
+            self.streamer.subscribe(active_list, "full")
+            print(f"Subscribed to {len(active_list)} active instruments in 'full' mode (LTP + OHLC) at {datetime.now(IST).strftime('%H:%M:%S')}")
         except Exception as e:
             print(f"Subscription error at {datetime.now(IST).strftime('%H:%M:%S')}: {e}")
 
@@ -143,8 +174,12 @@ class SimpleStockStreamer:
         close_reason = args[1] if len(args) > 1 else "unknown"
         print(f"WebSocket CLOSED at {current_time} - Code: {close_code}, Reason: {close_reason}")
         self.connected = False
-        if not self.reconnecting:
+        
+        # Only reconnect if this was NOT an intentional disconnection
+        if not self.reconnecting and not self.intentional_disconnect:
             self.reconnect()
+        else:
+            print("Skipping reconnection - intentional disconnection or already reconnecting")
 
     def connect(self):
         """Connect to WebSocket using Market Data Feed endpoint with auto-redirect"""
@@ -357,27 +392,36 @@ class SimpleStockStreamer:
 
     def unsubscribe(self, instrument_keys):
         """
-        Unsubscribe from specific instruments
+        Unsubscribe from specific instruments and remove from active list
         
         Args:
             instrument_keys: List of instrument keys to unsubscribe from
         """
-        if not self.streamer:
-            return
-        
         try:
-            self.streamer.unsubscribe(instrument_keys)
+            # Remove from active instruments list so they won't be re-subscribed on reconnection
+            for key in instrument_keys:
+                if key in self.active_instruments:
+                    self.active_instruments.remove(key)
+            
+            # Call Upstox unsubscribe if streamer is available
+            if self.streamer:
+                self.streamer.unsubscribe(instrument_keys)
+            
             print(f"Unsubscribed from {len(instrument_keys)} instruments")
+            print(f"Active instruments remaining: {len(self.active_instruments)}")
         except Exception as e:
             print(f"Unsubscribe error: {e}")
             raise
 
     def disconnect(self):
-        """Disconnect from WebSocket"""
+        """Disconnect from WebSocket - intentional disconnection"""
+        # Set flag to prevent unwanted reconnection
+        self.intentional_disconnect = True
+        
         if self.streamer:
             try:
                 self.streamer.disconnect()
-                print("WebSocket disconnected")
+                print("WebSocket disconnected (intentional)")
             except:
                 pass
         self.connected = False

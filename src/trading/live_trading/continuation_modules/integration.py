@@ -52,8 +52,6 @@ class ContinuationIntegration:
             timestamp: Tick timestamp
             ohlc_list: OHLC data (optional)
         """
-        # DEBUG: Check if ticks are arriving
-        print(f"[TICK DEBUG] {timestamp.strftime('%H:%M:%S')} - {symbol}: Rs{price:.2f}")
         
         # Get stock
         stock = self.monitor.stocks.get(instrument_key)
@@ -135,13 +133,25 @@ class ContinuationIntegration:
         
         # Log subscription status
         self.subscription_manager.log_subscription_status()
+        
+        # FIX: Update data streamer's active instruments to match validated stocks
+        # This fixes the subscription tracking discrepancy
+        self.data_streamer.update_active_instruments(instrument_keys)
 
     def phase_1_unsubscribe_after_gap_and_vah(self):
         """
         Phase 1: Unsubscribe stocks that failed gap validation or VAH validation
         Called immediately after gap validation at 9:14:30
+        
+        OPTIMIZATION: This method is now deprecated since we only subscribe to validated stocks
+        The subscription filtering happens in run_continuation.py before this method is called
         """
-        self.subscription_manager.unsubscribe_gap_and_vah_rejected()
+        print("\n=== PHASE 1: UNSUBSCRIBING GAP+VAH REJECTED STOCKS ===")
+        print("SKIPPED - Optimization implemented: Only validated stocks are subscribed")
+        print("Gap/VAH validation filtering happens before subscription in run_continuation.py")
+        
+        # Log current subscription status for debugging
+        self.subscription_manager.log_subscription_status()
 
     def phase_2_unsubscribe_after_low_and_volume(self):
         """

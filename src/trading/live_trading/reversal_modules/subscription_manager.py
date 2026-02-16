@@ -26,6 +26,20 @@ class SubscriptionManager:
         self.data_streamer = data_streamer
         self.monitor = monitor
     
+    def subscribe_all(self, instrument_keys: List[str]):
+        """
+        Subscribe to all instruments and update tracking
+        
+        Args:
+            instrument_keys: List of instrument keys to subscribe to
+        """
+        try:
+            if self.data_streamer.streamer:
+                self.data_streamer.streamer.subscribe(instrument_keys, "full")
+            print(f"Subscribed to {len(instrument_keys)} instruments in 'full' mode")
+        except Exception as e:
+            print(f"Subscribe error: {e}")
+    
     def safe_unsubscribe(self, instrument_keys: List[str], reason: str):
         """
         Safely unsubscribe from instruments with error handling
@@ -38,8 +52,17 @@ class SubscriptionManager:
             return
         
         try:
-            self.data_streamer.unsubscribe(instrument_keys)
-            print(f"[UNSUBSCRIBE] Removed {len(instrument_keys)} stocks - Reason: {reason}")
+            # Remove from active instruments list so they won't be re-subscribed on reconnection
+            for key in instrument_keys:
+                if key in self.data_streamer.active_instruments:
+                    self.data_streamer.active_instruments.remove(key)
+            
+            # Call Upstox unsubscribe if streamer is available
+            if self.data_streamer.streamer:
+                self.data_streamer.streamer.unsubscribe(instrument_keys)
+            
+            print(f"Unsubscribed {len(instrument_keys)} stocks - Reason: {reason}")
+            print(f"Active instruments remaining: {len(self.data_streamer.active_instruments)}")
             
             # Log which stocks were unsubscribed
             for key in instrument_keys:
@@ -50,11 +73,8 @@ class SubscriptionManager:
                     print(f"   ✓ {key}")
             
         except Exception as e:
-            print(f"[UNSUBSCRIBE ERROR] Failed to unsubscribe: {e}")
-            print(f"[UNSUBSCRIBE ERROR] Continuing with tick filtering for {len(instrument_keys)} stocks")
-            
-            # Fallback: Mark as unsubscribed in code (filtered in tick handler)
-            # The tick handler already checks stock.is_subscribed
+            print(f"Unsubscribe error: {e}")
+            print(f"Continuing with tick filtering for {len(instrument_keys)} stocks")
     
     def get_rejected_stocks(self) -> List[str]:
         """

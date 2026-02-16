@@ -65,6 +65,9 @@ class StockState:
         self.entry_high: Optional[float] = None  # High reached by 9:20
         self.entry_sl: Optional[float] = None    # 4% below entry_high
 
+        # Entry time tracking
+        self.entry_time_reached = False  # Track if entry time has been reached
+
         # Position data (when entered)
         self.entry_price: Optional[float] = None
         self.entry_time: Optional[datetime] = None
@@ -232,11 +235,18 @@ class StockState:
         # Set stop loss 4% below entry high
         self.entry_sl = self.entry_high * (1 - ENTRY_SL_PCT)
 
-        self.entry_ready = True
+        # CRITICAL FIX: Only set entry_ready = True if entry time has been reached
+        # This prevents entries from happening before 11:16:00
+        from config import ENTRY_TIME
+        current_time = datetime.now().time()
         
-        # Enhanced logging for entry price and SL at final waiting time
-        logger.info(f"[{self.symbol}] ENTRY/SL SET AT 9:20 - Entry Price: Rs{self.entry_high:.2f}, SL: Rs{self.entry_sl:.2f}")
-        logger.info(f"[{self.symbol}] Entry/SL Details: High reached = Rs{self.daily_high:.2f}, SL = {ENTRY_SL_PCT*100:.0f}% below entry")
+        if current_time >= ENTRY_TIME:
+            self.entry_time_reached = True
+            self.entry_ready = True
+            logger.info(f"[{self.symbol}] ENTRY/SL SET AT 9:20 - Entry Price: Rs{self.entry_high:.2f}, SL: Rs{self.entry_sl:.2f} (Entry time reached)")
+            logger.info(f"[{self.symbol}] Entry/SL Details: High reached = Rs{self.daily_high:.2f}, SL = {ENTRY_SL_PCT*100:.0f}% below entry")
+        else:
+            logger.info(f"[{self.symbol}] ENTRY/SL SET AT 9:20 - Entry Price: Rs{self.entry_high:.2f}, SL: Rs{self.entry_sl:.2f} (Waiting for entry time {ENTRY_TIME})")
 
     def check_entry_signal(self, price: float) -> bool:
         """Check if price has broken above the entry high"""

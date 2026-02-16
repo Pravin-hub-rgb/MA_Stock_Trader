@@ -1,0 +1,54 @@
+[
+  {
+    "timestamp": "2026-02-16T11:10:31.677211+05:30",
+    "type": "ENTRY",
+    "symbol": "DATAPATTNS",
+    "instrument_key": "NSE_EQ|INE0IX101010",
+    "entry_price": 2856.7,
+    "entry_high": 2856.7,
+    "stop_loss": 2742.43,
+    "open_price": 2856.7,
+    "previous_close": 2768.8,
+    "gap_pct": 3.17,
+    "session": "20260216_110835"
+  },
+  {
+    "timestamp": "2026-02-16T11:10:31.677211+05:30",
+    "type": "ENTRY",
+    "symbol": "ATHERENERG",
+    "instrument_key": "NSE_EQ|INE0LEZ01016",
+    "entry_price": 718.8,
+    "entry_high": 718.8,
+    "stop_loss": 690.05,
+    "open_price": 718.35,
+    "previous_close": 708.25,
+    "gap_pct": 1.43,
+    "session": "20260216_110835"
+  },
+  {
+    "timestamp": "2026-02-16T11:10:31.677211+05:30",
+    "type": "ENTRY",
+    "symbol": "LODHA",
+    "instrument_key": "NSE_EQ|INE670K01029",
+    "entry_price": 1088.55,
+    "entry_high": 1088.55,
+    "stop_loss": 1045.01,
+    "open_price": 1088.55,
+    "previous_close": 1073.6,
+    "gap_pct": 1.39,
+    "session": "20260216_110835"
+  },
+  {
+    "timestamp": "2026-02-16T11:10:31.677211+05:30",
+    "type": "ENTRY",
+    "symbol": "POONAWALLA",
+    "instrument_key": "NSE_EQ|INE511C01022",
+    "entry_price": 477.55,
+    "entry_high": 477.55,
+    "stop_loss": 458.45,
+    "open_price": 477.55,
+    "previous_close": 464.15,
+    "gap_pct": 2.89,
+    "session": "20260216_110835"
+  }
+]

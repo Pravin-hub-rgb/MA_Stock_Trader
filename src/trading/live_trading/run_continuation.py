@@ -154,7 +154,8 @@ def run_continuation_bot():
 
     print(f"\nPREPARED {len(instrument_keys)} continuation instruments")
 
-    # Initialize data streamer
+    # Initialize data streamer with all instruments initially
+    # We'll filter this later after validation
     data_streamer = SimpleStockStreamer(instrument_keys, stock_symbols)
 
     # CREATE MODULAR INTEGRATION
@@ -253,8 +254,8 @@ def run_continuation_bot():
                 print(f"WAITING {wait_seconds:.0f} seconds until PREP_START ({prep_start})...")
                 time_module.sleep(wait_seconds)
         
-        # Fetch IEP for all continuation stocks
-        print(f"FETCHING IEP for {len(symbols)} continuation stocks...")
+        # Fetch IEP for all continuation stocks at PREP_START
+        print(f"FETCHING IEP for {len(symbols)} continuation stocks at PREP_START ({prep_start})...")
         iep_prices = iep_manager.fetch_iep_batch(symbols)
         
         if iep_prices:
@@ -273,7 +274,7 @@ def run_continuation_bot():
                     stock.set_open_price(iep_price)
                     print(f"Set opening price for {symbol}: Rs{iep_price:.2f}")
                     
-                    # Run gap validation immediately (at 9:14:30)
+                    # Run gap validation immediately (at PREP_START)
                     if hasattr(stock, 'validate_gap'):
                         stock.validate_gap()
                         if stock.gap_validated:
@@ -281,7 +282,7 @@ def run_continuation_bot():
                         else:
                             print(f"Gap validation failed for {symbol}")
                     
-                    # IMMEDIATELY check VAH validation (since we have VAH values from 8:36:51)
+                    # IMMEDIATELY check VAH validation (since we have VAH values)
                     if global_vah_dict and stock.symbol in global_vah_dict:
                         vah_price = global_vah_dict[stock.symbol]
                         if hasattr(stock, 'validate_vah_rejection'):
@@ -323,71 +324,48 @@ def run_continuation_bot():
             print("USING IEP-BASED OPENING PRICES - Set at 9:14:30 from pre-market IEP")
             print("Gap validation completed at 9:14:30, ready for trading")
 
-            # Log comprehensive stock status before Phase 1 unsubscription
-            print("\n=== CONTINUATION STOCK STATUS BEFORE PHASE 1 UNSUBSCRIPTION ===")
+            # OPTIMIZATION: ONLY SUBSCRIBE TO VALIDATED STOCKS
+            # Since gap/VAH validation completed at 11:21:30, we can filter stocks before subscription
+            print("\n=== OPTIMIZATION: SUBSCRIBING ONLY TO VALIDATED STOCKS ===")
             
-            # Check all stocks individually
-            gap_failed_stocks = []
-            vah_failed_stocks = []
-            rejected_stocks = []
-            
+            # Get validated stocks (passed gap and VAH validation)
+            validated_stocks = []
             for stock in monitor.stocks.values():
-                # Track specific failure types
-                if not stock.gap_validated:
-                    gap_failed_stocks.append(stock)
-                if not stock.is_active and stock.rejection_reason and "VAH" in stock.rejection_reason:
-                    vah_failed_stocks.append(stock)
-                if not stock.is_active:
-                    rejected_stocks.append(stock)
+                if stock.gap_validated:
+                    # For continuation stocks, also check VAH validation
+                    if stock.situation == 'continuation':
+                        if (hasattr(stock, 'open_price') and stock.open_price is not None and 
+                            hasattr(stock, 'vah_price') and stock.vah_price is not None):
+                            if stock.open_price >= stock.vah_price:
+                                validated_stocks.append(stock)
+                                print(f"   VALIDATED: {stock.symbol} (Gap: PASSED, VAH: PASSED)")
+                            else:
+                                print(f"   REJECTED: {stock.symbol} (VAH validation failed)")
+                        else:
+                            print(f"   REJECTED: {stock.symbol} (Missing VAH data)")
+                    else:
+                        validated_stocks.append(stock)
+                        print(f"   VALIDATED: {stock.symbol} (Gap: PASSED)")
+                else:
+                    print(f"   REJECTED: {stock.symbol} (Gap validation failed)")
             
-            print(f"TOTAL STOCKS: {len(monitor.stocks)}")
+            # Create filtered instrument keys list
+            validated_instrument_keys = [stock.instrument_key for stock in validated_stocks]
             
-            if gap_failed_stocks:
-                print(f"\nUNSUBSCRIBED DUE TO GAP REJECTION ({len(gap_failed_stocks)}):")
-                for stock in gap_failed_stocks:
-                    gap_pct = 0.0
-                    if stock.open_price and stock.previous_close:
-                        gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
-                    print(f"   - {stock.symbol} (Gap: {gap_pct:+.2f}%)")
+            print(f"VALIDATED STOCKS: {len(validated_stocks)} out of {len(monitor.stocks)}")
+            print(f"VALIDATED SYMBOLS: {[stock.symbol for stock in validated_stocks]}")
             
-            if vah_failed_stocks:
-                print(f"\nUNSUBSCRIBED DUE TO VAH REJECTION ({len(vah_failed_stocks)}):")
-                for stock in vah_failed_stocks:
-                    if stock.open_price and stock.rejection_reason and "VAH" in stock.rejection_reason:
-                        # Extract VAH price from rejection reason
-                        vah_price = stock.rejection_reason.split("VAH ")[1].split(")")[0] if "VAH " in stock.rejection_reason else "Unknown"
-                        print(f"   - {stock.symbol} (Opening: {stock.open_price:.2f} < VAH: {vah_price})")
-            
-            # Find still subscribed stocks
-            active_stocks = [s for s in monitor.stocks.values() if s.is_active]
-            if active_stocks:
-                print(f"\nSTILL SUBSCRIBED ({len(active_stocks)}):")
-                for stock in active_stocks:
-                    gap_pct = 0.0
-                    if stock.open_price and stock.previous_close:
-                        gap_pct = ((stock.open_price - stock.previous_close) / stock.previous_close) * 100
-                    vah_status = "FAILED" if (hasattr(stock, 'vah_validated') and not stock.vah_validated) else "VALIDATED"
-                    print(f"   - {stock.symbol} (Gap: {gap_pct:+.2f}%, VAH: {vah_status})")
-            
-            print(f"\nPHASE 1 UNSUBSCRIPTION: Removing {len(rejected_stocks)} rejected stocks from WebSocket")
-
-            # PHASE 1: UNSUBSCRIBE GAP+VAH REJECTED STOCKS
-            # This happens immediately after WebSocket connection at market open
-            print("\n=== PHASE 1: UNSUBSCRIBING GAP+VAH REJECTED STOCKS ===")
-            integration.phase_1_unsubscribe_after_gap_and_vah()
-            
-            # DEBUG: Log subscription status after Phase 1 unsubscription
-            print("\n=== DEBUG: SUBSCRIPTION STATUS AFTER PHASE 1 UNSUBSCRIPTION ===")
-            active_stocks_after = monitor.get_active_stocks()
-            print(f"Active stocks after unsubscription: {len(active_stocks_after)}")
-            if active_stocks_after:
-                print("Remaining active stocks:")
-                for stock in active_stocks_after:
-                    print(f"   - {stock.symbol}")
+            # OPTIMIZATION: Subscribe only to validated stocks
+            # This eliminates the need for Phase 1 unsubscription
+            if validated_instrument_keys:
+                # USE MODULAR SUBSCRIPTION MANAGEMENT with filtered list
+                integration.prepare_and_subscribe(validated_instrument_keys)
+                print(f"OPTIMIZED SUBSCRIPTION: Only {len(validated_stocks)} validated stocks subscribed")
             else:
-                print("No active stocks remaining")
+                print("NO VALIDATED STOCKS - No subscriptions needed")
+                return
 
-            # Continue with normal entry decision timing
+            # ENFORCE ENTRY TIME: Wait until ENTRY_TIME before preparing entries
             entry_decision_time = ENTRY_TIME
             current_time = datetime.now(IST).time()
 
@@ -397,26 +375,42 @@ def run_continuation_bot():
                 current_datetime = datetime.now(IST)
                 wait_seconds = (decision_datetime - current_datetime).total_seconds()
                 if wait_seconds > 0:
-                    print(f"\nWAITING {wait_seconds:.0f} seconds until entry decision...")
+                    print(f"\nWAITING {wait_seconds:.0f} seconds until ENTRY_TIME ({entry_decision_time})...")
+                    print(f"Current time: {current_time}")
+                    print(f"Entry time: {entry_decision_time}")
                     time_module.sleep(wait_seconds)
 
-            # Prepare entries and select stocks
-            print("\n=== PREPARING ENTRIES ===")
-
-            # VAH validation already applied immediately after gap validation at 9:14:30
-            # No need to apply again here
-            
-            # Check for low violations and volume validations BEFORE showing status
-            print("=== CHECKING LOW VIOLATIONS AND VOLUME VALIDATIONS ===")
-            monitor.check_violations()
-            monitor.check_volume_validations()
+            print(f"\n=== ENTRY TIME REACHED: {datetime.now(IST).time()} ===")
             
             # PHASE 2: UNSUBSCRIBE LOW+VOLUME FAILED STOCKS
-            # This happens at 9:20 after all validations are complete
-            integration.phase_2_unsubscribe_after_low_and_volume()
+            # This should happen at 9:20 (30 seconds after market open), but since we're at entry time,
+            # we need to check if we're past 9:20 or if we should wait
+            phase_2_time = (datetime.combine(datetime.now(IST).date(), MARKET_OPEN) + timedelta(seconds=30)).time()
+            current_time = datetime.now(IST).time()
             
-            # Log final subscription status after Phase 2
-            integration.log_final_subscription_status()
+            if current_time >= phase_2_time:
+                print("=== PHASE 2: UNSUBSCRIBING LOW+VOLUME FAILED STOCKS ===")
+                monitor.check_violations()
+                monitor.check_volume_validations()
+                integration.phase_2_unsubscribe_after_low_and_volume()
+                integration.log_final_subscription_status()
+            else:
+                # Wait until phase 2 time
+                phase_2_datetime = datetime.combine(datetime.now(IST).date(), phase_2_time)
+                phase_2_datetime = IST.localize(phase_2_datetime)
+                current_datetime = datetime.now(IST)
+                wait_seconds = (phase_2_datetime - current_datetime).total_seconds()
+                if wait_seconds > 0:
+                    print(f"WAITING {wait_seconds:.0f} seconds until PHASE 2 ({phase_2_time})...")
+                    time_module.sleep(wait_seconds)
+                
+                print("=== PHASE 2: UNSUBSCRIBING LOW+VOLUME FAILED STOCKS ===")
+                monitor.check_violations()
+                monitor.check_volume_validations()
+                integration.phase_2_unsubscribe_after_low_and_volume()
+                integration.log_final_subscription_status()
+            
+            print("=== PREPARING ENTRIES ===")
             
             # NOW show the status AFTER all checks are done (with actual values)
             print("POST-VALIDATION STATUS (all checks completed):")
@@ -480,11 +474,6 @@ def run_continuation_bot():
             for stock in qualified_stocks:
                 stock.entry_ready = True
                 print(f"READY to trade: {stock.symbol} (Entry: Rs{stock.entry_high:.2f}, SL: Rs{stock.entry_sl:.2f})")
-
-            # USE MODULAR SUBSCRIPTION MANAGEMENT
-            # Subscribe all qualified stocks and let the integration handle dynamic management
-            integration.prepare_and_subscribe(instrument_keys)
-            print(f"MODULAR SUBSCRIPTION: All {len(qualified_stocks)} qualified stocks subscribed")
 
             # Keep monitoring for entries, exits, and trailing stops
             print("\nMONITORING for entry/exit signals...")

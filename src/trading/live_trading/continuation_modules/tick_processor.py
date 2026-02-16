@@ -35,8 +35,6 @@ class ContinuationTickProcessor:
             price: Current price for THIS stock
             timestamp: Tick timestamp
         """
-        # DEBUG: Check if ticks are reaching the tick processor
-        print(f"[TICK PROCESSOR] {timestamp.strftime('%H:%M:%S')} - {self.stock.symbol}: Processing tick Rs{price:.2f}")
         
         # Always update price tracking regardless of state
         self.stock.update_price(price, timestamp)
@@ -66,8 +64,6 @@ class ContinuationTickProcessor:
             price: Current price for THIS stock
             timestamp: Current timestamp
         """
-        # DEBUG: Log the tracking process
-        print(f"[TRACKING] {timestamp.strftime('%H:%M:%S')} - {self.stock.symbol}: Price Rs{price:.2f}, Daily High: Rs{self.stock.daily_high:.2f}, Open: Rs{self.stock.open_price:.2f}")
         
         # Always update daily high/low tracking
         self.stock.daily_high = max(self.stock.daily_high, price)
@@ -85,9 +81,19 @@ class ContinuationTickProcessor:
                 new_entry_sl != self.stock.entry_sl):
                 self.stock.entry_high = new_entry_high
                 self.stock.entry_sl = new_entry_sl
-                self.stock.entry_ready = True
-                print(f"[TRACKING] {timestamp.strftime('%H:%M:%S')} - {self.stock.symbol}: Updated Entry High: Rs{self.stock.entry_high:.2f}, SL: Rs{self.stock.entry_sl:.2f}")
-                logger.info(f"[{self.stock.symbol}] Continuation entry updated - High: {self.stock.entry_high:.2f}, SL: {self.stock.entry_sl:.2f}")
+                
+                # CRITICAL FIX: Only set entry_ready = True if entry time has been reached
+                # This prevents entries from happening before 11:16:00
+                from config import ENTRY_TIME
+                current_time = timestamp.time()
+                
+                if current_time >= ENTRY_TIME:
+                    self.stock.entry_time_reached = True
+                    self.stock.entry_ready = True
+                    logger.info(f"[{self.stock.symbol}] Continuation entry updated - High: {self.stock.entry_high:.2f}, SL: {self.stock.entry_sl:.2f} (Entry time reached)")
+                else:
+                    # Entry time not reached yet - continue tracking but don't allow entries
+                    logger.info(f"[{self.stock.symbol}] Continuation entry tracking - High: {self.stock.entry_high:.2f}, SL: {self.stock.entry_sl:.2f} (Waiting for entry time {ENTRY_TIME})")
 
     def _handle_entry_monitoring(self, price: float, timestamp: datetime):
         """
@@ -99,6 +105,14 @@ class ContinuationTickProcessor:
         """
         # DEBUG: Add state validation logging
         logger.info(f"[{self.stock.symbol}] Entry monitoring - Current state: active={self.stock.is_active}, Entry ready: {self.stock.entry_ready}, Entered: {self.stock.entered}")
+        
+        # CRITICAL FIX: Additional entry time gate - prevent entries before ENTRY_TIME
+        from config import ENTRY_TIME
+        current_time = timestamp.time()
+        
+        if current_time < ENTRY_TIME:
+            logger.info(f"[{self.stock.symbol}] Skipping entry - before entry time {ENTRY_TIME} (current: {current_time})")
+            return
         
         # Only process entries if stock is in correct state and ready
         if not self.stock.is_active:

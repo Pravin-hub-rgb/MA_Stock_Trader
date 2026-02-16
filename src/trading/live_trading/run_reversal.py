@@ -250,9 +250,35 @@ def run_reversal_bot():
         print("IEP FETCH FAILED - MANUAL OPENING PRICE CAPTURE REQUIRED")
         print("WARNING: Opening prices will need to be set manually or via alternative method")
 
-    # PHASE 1: UNSUBSCRIBE GAP-REJECTED STOCKS
-    # This happens immediately after gap validation at 12:31:30
-    integration.phase_1_unsubscribe_after_gap_validation()
+    # OPTIMIZATION: ONLY SUBSCRIBE TO GAP-VALIDATED STOCKS
+    # Since gap validation completed at 9:14:30, we can filter stocks before subscription
+    print("\n" + "=" * 55)
+    print("OPTIMIZATION: FILTERING GAP-VALIDATED STOCKS")
+    print("=" * 55)
+    
+    # Get gap-validated stocks
+    gap_validated_stocks = []
+    for stock in monitor.stocks.values():
+        if stock.gap_validated:
+            gap_validated_stocks.append(stock)
+
+    # Create filtered instrument keys list
+    gap_validated_instrument_keys = [stock.instrument_key for stock in gap_validated_stocks]
+
+    print(f"GAP-VALIDATED STOCKS: {len(gap_validated_stocks)} out of {len(monitor.stocks)}")
+    print(f"GAP-VALIDATED SYMBOLS: {[stock.symbol for stock in gap_validated_stocks]}")
+
+    # OPTIMIZATION: Subscribe only to gap-validated stocks
+    # This eliminates the need for Phase 1 unsubscription
+    if gap_validated_instrument_keys:
+        integration.prepare_and_subscribe(gap_validated_instrument_keys)
+        print(f"OPTIMIZED SUBSCRIPTION: Only {len(gap_validated_stocks)} gap-validated stocks subscribed")
+    else:
+        print("NO GAP-VALIDATED STOCKS - No subscriptions needed")
+        return
+
+    # REMOVED: integration.phase_1_unsubscribe_after_gap_validation()
+    # Reason: Optimization implemented - only gap-validated stocks are subscribed
     print()
 
     try:

@@ -144,6 +144,26 @@ class ReversalIntegration:
 
         return selected_stocks
     
+    def prepare_and_subscribe(self, instrument_keys: List[str]):
+        """
+        Prepare entries and subscribe to gap-validated stocks only
+        This eliminates the need for Phase 1 unsubscription
+        
+        Args:
+            instrument_keys: List of instrument keys to subscribe to (only gap-validated stocks)
+        """
+        # Subscribe to gap-validated stocks only
+        self.subscription_manager.subscribe_all(instrument_keys)
+        
+        # Prepare entry levels for qualified stocks
+        self.monitor.prepare_entries()
+        
+        # FIX: Update data streamer's active instruments to match gap-validated stocks
+        self.data_streamer.update_active_instruments_reversal(instrument_keys)
+        
+        # OPTIMIZATION: Skip Phase 1 - no gap-rejected stocks to unsubscribe
+        print("SKIPPED: Phase 1 unsubscription (optimization implemented)")
+    
     def log_final_subscription_status(self):
         """Log final subscription status"""
         self.subscription_manager.log_subscription_status()
