@@ -2,51 +2,30 @@
   "stocks": [
     {
       "symbol": "ASHAPURMIN",
-      "period": 7,
+      "period": 8,
       "trend": "downtrend",
-      "added_at": "2026-02-15T19:06:43.863592",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "BDL",
-      "period": 13,
-      "trend": "downtrend",
-      "added_at": "2026-02-15T19:06:46.386668",
+      "added_at": "2026-02-16T22:19:52.099697",
       "added_from": "scan_results"
     },
     {
       "symbol": "BSOFT",
+      "period": 4,
+      "trend": "uptrend",
+      "added_at": "2026-02-16T22:19:57.829375",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "HINDOILEXP",
       "period": 3,
       "trend": "uptrend",
-      "added_at": "2026-02-15T19:06:49.701042",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "CARTRADE",
-      "period": 9,
-      "trend": "downtrend",
-      "added_at": "2026-02-15T19:06:52.460783",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "INTELLECT",
-      "period": 13,
-      "trend": "downtrend",
-      "added_at": "2026-02-15T19:06:56.564862",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "KPITTECH",
-      "period": 9,
-      "trend": "downtrend",
-      "added_at": "2026-02-15T19:06:59.459240",
+      "added_at": "2026-02-16T22:20:12.099625",
       "added_from": "scan_results"
     },
     {
       "symbol": "WALCHANNAG",
-      "period": 9,
+      "period": 10,
       "trend": "downtrend",
-      "added_at": "2026-02-15T19:07:02.557122",
+      "added_at": "2026-02-16T22:20:21.502903",
       "added_from": "scan_results"
     }
   ]

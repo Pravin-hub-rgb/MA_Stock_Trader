@@ -1,20 +1,12 @@
 {
-  "timestamp": "2026-02-16T12:21:40.653254",
+  "timestamp": "2026-02-17T08:41:39.210501",
   "mode": "continuation",
   "results": {
-    "ATHERENERG": 704.72,
-    "CHENNPETRO": 886.97,
-    "DATAPATTNS": 2773.23,
-    "ELECON": 436.23,
-    "IDBI": 112.69,
-    "INFOBEAN": 901.02,
-    "LODHA": 1077.17,
-    "NAVNETEDUL": 156.8,
-    "NLCINDIA": 256.28,
-    "POONAWALLA": 470.43,
-    "ROSSTECH": 732.67,
-    "SHANTIGOLD": 221.68,
-    "UNIONBANK": 179.98
+    "ATHERENERG": 720.52,
+    "CHENNPETRO": 886.52,
+    "DCBBANK": 194.43,
+    "EKC": 120.57,
+    "INFOBEAN": 882.62
   },
-  "summary": "13 stocks calculated"
+  "summary": "5 stocks calculated"
 }

@@ -2,67 +2,27 @@
   "stocks": [
     {
       "symbol": "ATHERENERG",
-      "added_at": "2026-02-15T19:04:49.246268",
+      "added_at": "2026-02-16T22:17:46.834070",
       "added_from": "scan_results"
     },
     {
       "symbol": "CHENNPETRO",
-      "added_at": "2026-02-15T19:04:52.397978",
+      "added_at": "2026-02-16T22:17:54.538684",
       "added_from": "scan_results"
     },
     {
-      "symbol": "DATAPATTNS",
-      "added_at": "2026-02-15T19:04:57.549466",
+      "symbol": "DCBBANK",
+      "added_at": "2026-02-16T22:17:59.396115",
       "added_from": "scan_results"
     },
     {
-      "symbol": "ELECON",
-      "added_at": "2026-02-15T19:05:00.163591",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "IDBI",
-      "added_at": "2026-02-15T19:05:03.775959",
+      "symbol": "EKC",
+      "added_at": "2026-02-16T22:18:05.340378",
       "added_from": "scan_results"
     },
     {
       "symbol": "INFOBEAN",
-      "added_at": "2026-02-15T19:05:07.484924",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "LODHA",
-      "added_at": "2026-02-15T19:05:14.374930",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "NAVNETEDUL",
-      "added_at": "2026-02-15T19:05:18.127277",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "NLCINDIA",
-      "added_at": "2026-02-15T19:05:21.116834",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "POONAWALLA",
-      "added_at": "2026-02-15T19:05:24.734240",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "ROSSTECH",
-      "added_at": "2026-02-15T19:05:28.996965",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "SHANTIGOLD",
-      "added_at": "2026-02-15T19:05:31.790119",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "UNIONBANK",
-      "added_at": "2026-02-15T19:05:36.392223",
+      "added_at": "2026-02-16T22:18:38.867963",
       "added_from": "scan_results"
     }
   ]
