@@ -1,31 +1,17 @@
 {
   "stocks": [
     {
-      "symbol": "ASHAPURMIN",
-      "period": 8,
-      "trend": "downtrend",
-      "added_at": "2026-02-16T22:19:52.099697",
-      "added_from": "scan_results"
-    },
-    {
       "symbol": "BSOFT",
-      "period": 4,
+      "period": 5,
       "trend": "uptrend",
-      "added_at": "2026-02-16T22:19:57.829375",
+      "added_at": "2026-02-17T19:14:52.554448",
       "added_from": "scan_results"
     },
     {
-      "symbol": "HINDOILEXP",
-      "period": 3,
-      "trend": "uptrend",
-      "added_at": "2026-02-16T22:20:12.099625",
-      "added_from": "scan_results"
-    },
-    {
-      "symbol": "WALCHANNAG",
-      "period": 10,
+      "symbol": "ASHAPURMIN",
+      "period": 9,
       "trend": "downtrend",
-      "added_at": "2026-02-16T22:20:21.502903",
+      "added_at": "2026-02-17T19:14:57.376717",
       "added_from": "scan_results"
     }
   ]

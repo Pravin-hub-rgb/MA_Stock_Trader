@@ -1,28 +1,43 @@
 {
   "stocks": [
     {
-      "symbol": "ATHERENERG",
-      "added_at": "2026-02-16T22:17:46.834070",
+      "symbol": "ADANIPOWER",
+      "added_at": "2026-02-17T18:58:22.332721",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "ANANTRAJ",
+      "added_at": "2026-02-17T18:58:58.277851",
       "added_from": "scan_results"
     },
     {
       "symbol": "CHENNPETRO",
-      "added_at": "2026-02-16T22:17:54.538684",
+      "added_at": "2026-02-17T19:02:26.339490",
       "added_from": "scan_results"
     },
     {
-      "symbol": "DCBBANK",
-      "added_at": "2026-02-16T22:17:59.396115",
+      "symbol": "JINDALSAW",
+      "added_at": "2026-02-17T19:03:03.605618",
       "added_from": "scan_results"
     },
     {
-      "symbol": "EKC",
-      "added_at": "2026-02-16T22:18:05.340378",
+      "symbol": "KITEX",
+      "added_at": "2026-02-17T19:08:31.315278",
       "added_from": "scan_results"
     },
     {
-      "symbol": "INFOBEAN",
-      "added_at": "2026-02-16T22:18:38.867963",
+      "symbol": "MIDHANI",
+      "added_at": "2026-02-17T19:08:47.377162",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "REDTAPE",
+      "added_at": "2026-02-17T19:09:03.647944",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "ROSSTECH",
+      "added_at": "2026-02-17T19:09:09.785952",
       "added_from": "scan_results"
     }
   ]
