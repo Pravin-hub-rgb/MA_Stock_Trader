@@ -1,17 +1,80 @@
 {
   "stocks": [
     {
-      "symbol": "BSOFT",
-      "period": 5,
+      "symbol": "CAPACITE",
+      "period": 11,
       "trend": "uptrend",
-      "added_at": "2026-02-17T19:14:52.554448",
+      "added_at": "2026-03-16T21:42:17.495192",
       "added_from": "scan_results"
     },
     {
-      "symbol": "ASHAPURMIN",
-      "period": 9,
+      "symbol": "DCXINDIA",
+      "period": 6,
+      "trend": "uptrend",
+      "added_at": "2026-03-16T21:42:20.525600",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "HINDOILEXP",
+      "period": 6,
       "trend": "downtrend",
-      "added_at": "2026-02-17T19:14:57.376717",
+      "added_at": "2026-03-16T21:42:26.030756",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "JINDRILL",
+      "period": 8,
+      "trend": "uptrend",
+      "added_at": "2026-03-16T21:42:32.945485",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "JWL",
+      "period": 6,
+      "trend": "downtrend",
+      "added_at": "2026-03-16T21:42:35.755766",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PARAS",
+      "period": 6,
+      "trend": "uptrend",
+      "added_at": "2026-03-16T21:42:39.070262",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PCBL",
+      "period": 13,
+      "trend": "downtrend",
+      "added_at": "2026-03-16T21:42:42.167409",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "PRECWIRE",
+      "period": 4,
+      "trend": "uptrend",
+      "added_at": "2026-03-16T21:42:45.023679",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "RSYSTEMS",
+      "period": 4,
+      "trend": "downtrend",
+      "added_at": "2026-03-16T21:42:47.267777",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "SHRINGARMS",
+      "period": 14,
+      "trend": "downtrend",
+      "added_at": "2026-03-16T21:42:51.719272",
+      "added_from": "scan_results"
+    },
+    {
+      "symbol": "TTKPRESTIG",
+      "period": 3,
+      "trend": "downtrend",
+      "added_at": "2026-03-16T21:43:00.553543",
       "added_from": "scan_results"
     }
   ]
