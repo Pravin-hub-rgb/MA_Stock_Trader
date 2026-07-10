@@ -444,6 +444,7 @@ class ScanFilters(BaseModel):
     min_price: Optional[int] = None
     max_price: Optional[int] = None
     near_ma_threshold: Optional[float] = None
+    near_ma_direction: Optional[str] = None
     max_body_percentage: Optional[float] = None
     rev_decline_days_min: Optional[int] = None
     rev_decline_days_max: Optional[int] = None
@@ -469,6 +470,8 @@ def trigger_continuation_scan(request: Optional[ScanRequest] = None):
             params["price_max"] = f.max_price
         if f.near_ma_threshold is not None:
             params["near_ma_threshold"] = f.near_ma_threshold
+        if f.near_ma_direction is not None:
+            params["near_ma_direction"] = f.near_ma_direction
         if f.max_body_percentage is not None:
             params["max_body_percentage"] = f.max_body_percentage
 

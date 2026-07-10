@@ -158,9 +158,15 @@ class ContinuationScanner:
             df["SMA20"] = df["sma_20"]
         else:
             df["SMA20"] = df["close"].rolling(sma_period).mean()
-        df["Above_MA"] = df["close"] > df["SMA20"]
+        direction = self.params.get("near_ma_direction", "above")
         df["Dist_to_MA_pct"] = abs(df["close"] - df["SMA20"]) / df["close"]
-        df["Near_MA"] = df["Above_MA"] & (df["Dist_to_MA_pct"] <= NEAR_TH)
+        if direction == "above":
+            df["Near_MA"] = (df["close"] > df["SMA20"]) & (df["Dist_to_MA_pct"] <= NEAR_TH)
+        elif direction == "below":
+            df["Near_MA"] = (df["close"] < df["SMA20"]) & (df["Dist_to_MA_pct"] <= NEAR_TH)
+        else:
+            df["Near_MA"] = df["Dist_to_MA_pct"] <= NEAR_TH
+        df["Above_MA"] = df["close"] > df["SMA20"]
         df["SMA20_prev_max"] = df["SMA20"].shift(1).rolling(rising_ma_window).max()
         df["Rising_MA"] = df["SMA20"] > df["SMA20_prev_max"]
 
@@ -185,6 +191,21 @@ class ContinuationScanner:
         if below.empty:
             return None
         last_below = below.index[-1]
+
+        # For below/both mode when latest candle is itself below MA,
+        # skip the current below-MA run and find the previous Phase B dip
+        if direction in ("below", "both") and not latest["Above_MA"]:
+            above_idx = None
+            for i in range(len(window) - 1, -1, -1):
+                if window["Above_MA"].iloc[i]:
+                    above_idx = i
+                    break
+            if above_idx is None or above_idx < 5:
+                return None
+            prev_below = window.iloc[:above_idx][~window.iloc[:above_idx]["Above_MA"]]
+            if prev_below.empty:
+                return None
+            last_below = prev_below.index[-1]
 
         recovery = window.loc[last_below:]
         recovery_start = recovery[recovery["Above_MA"]]
@@ -372,6 +393,7 @@ def get_default_params() -> dict:
         "price_min": int(s.get("price_min", 100)),
         "price_max": int(s.get("price_max", 2000)),
         "near_ma_threshold": float(s.get("cont_near_ma_threshold_pct", 5.0)),
+        "near_ma_direction": s.get("cont_near_ma_direction", "above"),
         "max_body_percentage": float(s.get("cont_max_body_pct", 5.0)),
         "min_adr": float(s.get("min_adr_pct", 3.0)),
         "volume_threshold": int(s.get("volume_min", 1000000)),

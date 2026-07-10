@@ -52,6 +52,7 @@ SEED: list[dict] = [
     {"key": "ma_angle_points", "value": "5", "type": "number", "category": "scanner_base", "label": "MA Angle Points", "description": "Points for MA angle linear regression", "min": "3", "max": "20", "step": "1"},
     # ---- Scanner: Continuation ----
     {"key": "cont_near_ma_threshold_pct", "value": "5.0", "type": "number", "category": "scanner_continuation", "label": "Near MA Threshold (%)", "description": "Max distance from SMA20 for near-MA filter", "min": "0.0", "max": "20.0", "step": "0.5"},
+    {"key": "cont_near_ma_direction", "value": "above", "type": "select", "category": "scanner_continuation", "label": "Near MA Direction", "description": "Above SMA20, below SMA20, or both sides", "options": "above,below,both"},
     {"key": "cont_max_body_pct", "value": "5.0", "type": "number", "category": "scanner_continuation", "label": "Max Body (%)", "description": "Max candle body as % of range", "min": "0.0", "max": "20.0", "step": "0.5"},
     {"key": "cont_lookback_days", "value": "80", "type": "number", "category": "scanner_continuation", "label": "Continuation Lookback (days)", "description": "Lookback for continuation pattern", "min": "20", "max": "200", "step": "5"},
     {"key": "cont_consolidation_days_min", "value": "3", "type": "number", "category": "scanner_continuation", "label": "Consolidation Min (days)", "description": "Min consolidation days", "min": "1", "max": "20", "step": "1"},

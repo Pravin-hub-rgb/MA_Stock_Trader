@@ -32,6 +32,7 @@ export default function ContinuationScanner() {
   const [minPrice, setMinPrice] = useState(() => loadFilter("minPrice", 100));
   const [maxPrice, setMaxPrice] = useState(() => loadFilter("maxPrice", 2000));
   const [nearMa, setNearMa] = useState(() => loadFilter("nearMa", 5));
+  const [nearMaDirection, setNearMaDirection] = useState(() => { if (typeof window === "undefined") return "above"; return localStorage.getItem("cont_nearMaDirection") || "above"; });
   const [maxBody, setMaxBody] = useState(() => loadFilter("maxBody", 5));
   const { state, setContinuationResults, setContScanProgress, setContinuationViewMode } = useAppState();
   const { contScanProgress: { scanning, progress, status, operationId } } = state;
@@ -52,6 +53,7 @@ export default function ContinuationScanner() {
   useEffect(() => { localStorage.setItem("cont_minPrice", String(minPrice)); }, [minPrice]);
   useEffect(() => { localStorage.setItem("cont_maxPrice", String(maxPrice)); }, [maxPrice]);
   useEffect(() => { localStorage.setItem("cont_nearMa", String(nearMa)); }, [nearMa]);
+  useEffect(() => { localStorage.setItem("cont_nearMaDirection", nearMaDirection); }, [nearMaDirection]);
   useEffect(() => { localStorage.setItem("cont_maxBody", String(maxBody)); }, [maxBody]);
 
   useEffect(() => {
@@ -68,6 +70,8 @@ export default function ContinuationScanner() {
           setMaxPrice(parseInt(s.price_max, 10));
         if (localStorage.getItem("cont_nearMa") === null && s.cont_near_ma_threshold_pct)
           setNearMa(Math.round(parseFloat(s.cont_near_ma_threshold_pct)));
+        if (localStorage.getItem("cont_nearMaDirection") === null && s.cont_near_ma_direction)
+          setNearMaDirection(s.cont_near_ma_direction);
         if (localStorage.getItem("cont_maxBody") === null && s.cont_max_body_pct)
           setMaxBody(Math.round(parseFloat(s.cont_max_body_pct)));
       })
@@ -138,6 +142,7 @@ export default function ContinuationScanner() {
             min_price: minPrice,
             max_price: maxPrice,
             near_ma_threshold: nearMa,
+            near_ma_direction: nearMaDirection,
             max_body_percentage: maxBody,
           },
         }),
@@ -217,7 +222,7 @@ export default function ContinuationScanner() {
       ))}
       <Card sx={{ background: "#0d1117", border: "1px solid #1e293b", borderRadius: 2 }}>
         <CardContent sx={{ px: 3, py: 2 }}>
-          <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px 16px" }}>
+            <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px 16px" }}>
             <Typography sx={{ fontWeight: 700, color: "#f1f5f9", fontSize: "0.85rem" }}>
               Filters
             </Typography>
@@ -250,6 +255,26 @@ export default function ContinuationScanner() {
                 />
               </Box>
             ))}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              <Typography sx={{ color: "#94a3b8", fontSize: "0.8rem", whiteSpace: "nowrap" }}>Direction</Typography>
+              <Box
+                component="select"
+                value={nearMaDirection}
+                onChange={e => setNearMaDirection(e.target.value)}
+                sx={{
+                  width: 100, px: 2, py: 0.7, borderRadius: 1.5,
+                  bgcolor: "#1e293b", color: "#f8fafc",
+                  border: "1px solid #334155", outline: "none",
+                  fontSize: "0.85rem", fontFamily: '"SF Mono", "Fira Code", monospace',
+                  cursor: "pointer", transition: "border-color 0.15s",
+                  "&:focus": { borderColor: "#6366f1" },
+                }}
+              >
+                <option value="above">Above</option>
+                <option value="below">Below</option>
+                <option value="both">Both</option>
+              </Box>
+            </Box>
             <Box sx={{ flex: 1, minWidth: 40 }} />
             <Button
               variant="contained" disableElevation
