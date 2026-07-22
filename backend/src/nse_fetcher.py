@@ -99,39 +99,28 @@ def _download_zip(url: str, session: requests.Session) -> Optional[pd.DataFrame]
 
 def download_bhavcopy(target_date: date) -> Optional[pd.DataFrame]:
     """
-    Download bhavcopy for a given date using fallback strategies with retries.
+    Download bhavcopy for a given date using UDiFF URL.
     Returns standardized DataFrame or None.
 
-    Fallback order:
-      1. Direct NSE archives URL (UDiFF format, post-2024)
-      2. Historical URL pattern (old format)
-
-    Each strategy is retried up to 3 times with 5-second delays (matching
-    the old legacy code's robust behavior).
+    archives.nseindia.com (historical) removed 2026-07-20 - server returns 503 for all dates.
     """
     yyyymmdd = target_date.strftime("%Y%m%d")
-
-    strategies = [
-        ("direct-udiff", _url_udiff(yyyymmdd)),
-        ("historical", _url_historical(target_date)),
-    ]
-
+    url = _url_udiff(yyyymmdd)
     session = _get_session()
 
-    for name, url in strategies:
-        for attempt in range(3):
-            try:
-                logger.info(f"Trying {name} for {target_date} (attempt {attempt + 1})")
-                df = _download_zip(url, session)
-                if df is not None and len(df) > 500:
-                    return _standardize(df, target_date, name)
-            except Exception as e:
-                logger.warning(f"{name} attempt {attempt + 1} failed for {target_date}: {e}")
-                if attempt < 2:
-                    time.sleep(5)
-                continue
+    for attempt in range(3):
+        try:
+            logger.info(f"Trying direct-udiff for {target_date} (attempt {attempt + 1})")
+            df = _download_zip(url, session)
+            if df is not None and len(df) > 500:
+                return _standardize(df, target_date, "direct-udiff")
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed for {target_date}: {e}")
+            if attempt < 2:
+                time.sleep(5)
+            continue
 
-    logger.error(f"All download strategies failed for {target_date}")
+    logger.error(f"Failed to download bhavcopy for {target_date}")
     return None
 
 
@@ -142,12 +131,6 @@ def _url_udiff(yyyymmdd: str) -> str:
     )
 
 
-def _url_historical(target_date: date) -> str:
-    return (
-        f"https://archives.nseindia.com/content/historical/EQUITIES/"
-        f"{target_date.strftime('%Y')}/{target_date.strftime('%b').upper()}/"
-        f"cm{target_date.strftime('%d%b%Y').upper()}bhav.csv.zip"
-    )
 
 
 def get_stock_row(symbol: str, bhavcopy_df: pd.DataFrame) -> Optional[pd.Series]:

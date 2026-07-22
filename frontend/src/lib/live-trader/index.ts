@@ -163,6 +163,10 @@ export class LiveTraderOrchestrator {
 
     const minRatio = this.config.svroMinVolumeRatio ?? 0.075;
 
+    this.log(`Waiting for ENTRY_TIME (${this.config.entryTime})...`);
+    await sleepUntilIST(this.config.entryTime);
+    this.log("ENTRY TIME REACHED");
+
     if (this.mode === "reversal") {
       this.log("Making OOPS stocks ready for immediate trading...");
       for (const [, stock] of this.reversalMonitor?.stocks ?? new Map())
@@ -174,10 +178,6 @@ export class LiveTraderOrchestrator {
         }
       }
     }
-
-    this.log(`Waiting for ENTRY_TIME (${this.config.entryTime})...`);
-    await sleepUntilIST(this.config.entryTime);
-    this.log("ENTRY TIME REACHED");
 
     if (this.mode === "continuation") {
       this.log("Phase 2: checking low violations, volume...");

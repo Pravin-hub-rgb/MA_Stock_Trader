@@ -134,14 +134,12 @@ def trigger_update(background_tasks: BackgroundTasks, request: Optional[UpdateRe
     if today.weekday() >= 5 or today in get_nse_holidays():
         return {"status": "up_to_date", "message": "Today is not a trading day. Cache is up to date."}
 
-    # Today is a trading day — try to download bhavcopy (may be available after ~7 PM)
+    # Today is a trading day - try to download bhavcopy (available after ~7 PM IST / 1:30 PM UTC)
     target = today
-    # Make an upfront check so we can return instantly instead of starting a
-    # background task that will fail a minute later.
-    from src.nse_fetcher import download_bhavcopy
-    bc = download_bhavcopy(target)
-    if bc is None or bc.empty:
-        return {"status": "up_to_date", "message": "Today's market data not yet available (typically after 7 PM). Cache is up to date."}
+    # Don't bother trying before 1:30 PM UTC - bhavcopy is never available during trading hours
+    from datetime import timezone
+    if datetime.now(timezone.utc).hour < 13 or (datetime.now(timezone.utc).hour == 13 and datetime.now(timezone.utc).minute < 30):
+        return {"status": "up_to_date", "message": "Today's market data not yet available (typically after 7 PM IST). Cache is up to date."}
 
     active_operations[operation_id] = {
         "operation_id": operation_id,
