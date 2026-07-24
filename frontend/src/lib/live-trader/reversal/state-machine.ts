@@ -6,6 +6,7 @@ export interface StateMachineParams {
   lowViolationPct: number;
   trailingSlThreshold: number;
   gapUpMaxPct: number;
+  entryTime?: string;
 }
 
 export class StateMachineMixin {

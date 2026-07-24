@@ -51,9 +51,16 @@ export class LiveTraderOrchestrator {
     await this.streamer.init();
 
     const symbolMap = new Map<string, string>();
+    if (stocks) {
+      for (const s of stocks) {
+        if (s.instrumentKey && s.symbol) symbolMap.set(s.instrumentKey, s.symbol);
+      }
+    }
     for (const key of instruments) {
-      const parts = key.split("|");
-      symbolMap.set(key, parts.length >= 2 ? parts[parts.length - 1] : key);
+      if (!symbolMap.has(key)) {
+        const parts = key.split("|");
+        symbolMap.set(key, parts.length >= 2 ? parts[parts.length - 1] : key);
+      }
     }
     this.streamer.setSymbolMap(symbolMap);
 

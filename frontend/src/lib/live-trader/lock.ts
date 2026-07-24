@@ -83,10 +83,20 @@ export class LockManager {
       const content = fs.readFileSync(this.lockFile, "utf-8").trim();
       const lines = content.split("\n");
       const pid = parseInt(lines[0], 10);
+      const timestamp = parseInt(lines[1], 10);
 
       if (pid && !this.isProcessAlive(pid)) {
         const label = this.botType === "reversal" ? "Reversal" : "Continuation";
         console.log(`[LOCK] Found stale ${label} lock from dead process ${pid}, removing`);
+        fs.unlinkSync(this.lockFile);
+        return;
+      }
+
+      // Backup: on Windows, PIDs can be recycled quickly. If the lock file
+      // is older than 1 hour, treat it as stale even if the PID is alive.
+      if (timestamp && Date.now() - timestamp > 3600000) {
+        const label = this.botType === "reversal" ? "Reversal" : "Continuation";
+        console.log(`[LOCK] Found stale ${label} lock (older than 1h, PID ${pid} may be recycled), removing`);
         fs.unlinkSync(this.lockFile);
       }
     } catch {

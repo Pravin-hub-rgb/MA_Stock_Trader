@@ -1,6 +1,11 @@
 import { StockStateEnum } from "../types";
 import { ReversalStockState } from "./stock-monitor";
 
+function parseTime(t: string): number {
+  const parts = t.split(":");
+  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+}
+
 export class ReversalTickProcessor {
   private stock: ReversalStockState;
 
@@ -43,13 +48,22 @@ export class ReversalTickProcessor {
       if (this.stock.entryHigh === null || newHigh > this.stock.entryHigh) {
         this.stock.entryHigh = newHigh;
         this.stock.entrySl = newSl;
-        this.stock.entryReady = true;
+        // NOTE: entryReady is NOT set here — it must only be set by prepareEntry()
+        // at ENTRY_TIME. This prevents premature entry before 09:20.
+        // See index.ts start() lines 170-174 where entryReady is set at ENTRY_TIME.
       }
     }
   }
 
   private handleEntryMonitoring(price: number, timestamp: Date): void {
     if (this.stock.entered || !this.stock.entryReady) return;
+
+    // Defense-in-depth: don't enter before entry time (matches continuation pattern)
+    const entryMinutes = this.stock.params.entryTime
+      ? parseTime(this.stock.params.entryTime)
+      : 9 * 60 + 20;
+    const nowMinutes = timestamp.getHours() * 60 + timestamp.getMinutes();
+    if (nowMinutes < entryMinutes) return;
 
     if (this.stock.situation === "reversal_s2") {
       this.checkOopsEntry(price, timestamp);
