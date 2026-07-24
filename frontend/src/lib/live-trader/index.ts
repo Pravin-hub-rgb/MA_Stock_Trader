@@ -70,6 +70,7 @@ export class LiveTraderOrchestrator {
           flatGapThreshold: this.config.flatGapThreshold ?? 0.003,
           entrySlPct: this.config.entrySlPct ?? 0.04, lowViolationPct: this.config.lowViolationPct ?? 0.01,
           trailingSlThreshold: this.config.trailingSlThreshold ?? 0.05, gapUpMaxPct: this.config.gapUpMaxPct ?? 0.05,
+          entryTime: this.config.entryTime,
         };
         for (const s of stocks) {
           if (!s.situation?.startsWith("reversal")) continue;
