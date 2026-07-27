@@ -37,7 +37,7 @@ export default function StockTables({ active, rejected, running, mode }: { activ
                     {isReversal && <TableCell sx={{ color: "#a78bfa", fontFamily: "monospace", fontSize: "0.75rem", fontWeight: 600 }}>{s.situation === "reversal_s2" ? "OOPS" : s.situation === "reversal_s1" ? "SS" : "--"}</TableCell>}
                     <TableCell sx={{ color: "#e2e8f0", fontFamily: "monospace", fontSize: "0.8rem" }}>{s.currentPrice?.toFixed(2) ?? "--"}</TableCell>
                     <TableCell sx={{ color: "#34d399", fontFamily: "monospace", fontSize: "0.8rem" }}>{s.entryPrice?.toFixed(2) ?? "--"}</TableCell>
-                    <TableCell sx={{ color: "#f59e0b", fontFamily: "monospace", fontSize: "0.8rem" }}>{s.entered && s.entrySl ? s.entrySl.toFixed(2) : s.exitPrice?.toFixed(2) ?? "--"}</TableCell>
+                    <TableCell sx={{ color: "#f59e0b", fontFamily: "monospace", fontSize: "0.8rem" }}>{s.exitPrice?.toFixed(2) ?? s.entrySl?.toFixed(2) ?? "--"}</TableCell>
                     <TableCell sx={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "0.75rem" }}>{s.cumulativeVolume > 0 ? s.cumulativeVolume.toLocaleString() : s.earlyVolume > 0 ? s.earlyVolume.toLocaleString() : "--"}</TableCell>
                     <TableCell sx={{ color: "#10b981", fontFamily: "monospace", fontSize: "0.8rem" }}>{s.dailyHigh != null && isFinite(s.dailyHigh) ? s.dailyHigh.toFixed(2) : "--"}</TableCell>
                     <TableCell sx={{ color: "#ef4444", fontFamily: "monospace", fontSize: "0.8rem" }}>{s.dailyLow != null && isFinite(s.dailyLow) ? s.dailyLow.toFixed(2) : "--"}</TableCell>

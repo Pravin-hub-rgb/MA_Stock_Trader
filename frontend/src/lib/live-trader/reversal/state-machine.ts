@@ -154,6 +154,7 @@ export class StateMachineMixin {
     if (this.entryHigh === null || newHigh > this.entryHigh) {
       this.entryHigh = newHigh;
       this.entrySl = newSl;
+      this.entryPrice = newHigh;
       this.entryReady = true;
     }
   }
