@@ -444,6 +444,7 @@ class ScanFilters(BaseModel):
     near_ma_threshold: Optional[float] = None
     near_ma_direction: Optional[str] = None
     max_body_percentage: Optional[float] = None
+    rising_ma_tolerance: Optional[float] = None
     rev_decline_days_min: Optional[int] = None
     rev_decline_days_max: Optional[int] = None
     rev_min_decline_pct: Optional[float] = None
@@ -472,6 +473,15 @@ def trigger_continuation_scan(request: Optional[ScanRequest] = None):
             params["near_ma_direction"] = f.near_ma_direction
         if f.max_body_percentage is not None:
             params["max_body_percentage"] = f.max_body_percentage
+        if f.rising_ma_tolerance is not None:
+            params["rising_ma_tolerance"] = f.rising_ma_tolerance
+
+    scan_date = None
+    if request and request.date:
+        try:
+            scan_date = date.fromisoformat(request.date)
+        except ValueError:
+            pass
 
     active_operations[operation_id] = {
         "operation_id": operation_id,
@@ -482,7 +492,7 @@ def trigger_continuation_scan(request: Optional[ScanRequest] = None):
         "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] Starting continuation scan..."],
     }
 
-    t = threading.Thread(target=_run_continuation_scan, args=(operation_id, params), daemon=True)
+    t = threading.Thread(target=_run_continuation_scan, args=(operation_id, params, scan_date), daemon=True)
     t.start()
     return {"status": "started", "operation_id": operation_id}
 
@@ -506,6 +516,13 @@ def trigger_reversal_scan(request: Optional[ScanRequest] = None):
         if f.rev_min_decline_pct is not None:
             params["rev_min_decline_pct"] = f.rev_min_decline_pct
 
+    scan_date = None
+    if request and request.date:
+        try:
+            scan_date = date.fromisoformat(request.date)
+        except ValueError:
+            pass
+
     active_operations[operation_id] = {
         "operation_id": operation_id,
         "type": "reversal_scan",
@@ -515,7 +532,7 @@ def trigger_reversal_scan(request: Optional[ScanRequest] = None):
         "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] Starting reversal scan..."],
     }
 
-    t = threading.Thread(target=_run_reversal_scan, args=(operation_id, params), daemon=True)
+    t = threading.Thread(target=_run_reversal_scan, args=(operation_id, params, scan_date), daemon=True)
     t.start()
     return {"status": "started", "operation_id": operation_id}
 
@@ -946,7 +963,7 @@ def _run_historical_download(operation_id: str):
         active_operations[operation_id].update(status="error", message=str(e), error=str(e))
 
 
-def _run_continuation_scan(operation_id: str, params: dict):
+def _run_continuation_scan(operation_id: str, params: dict, scan_date=None):
     try:
         op = active_operations[operation_id]
         op["status"] = "running"
@@ -956,7 +973,7 @@ def _run_continuation_scan(operation_id: str, params: dict):
             op["message"] = msg
 
         scanner = ContinuationScanner(params)
-        results = scanner.run(progress_callback=progress)
+        results = scanner.run(progress_callback=progress, scan_date=scan_date)
 
         op.update(
             status="completed",
@@ -969,7 +986,7 @@ def _run_continuation_scan(operation_id: str, params: dict):
         active_operations[operation_id].update(status="error", message=str(e), error=str(e))
 
 
-def _run_reversal_scan(operation_id: str, params: dict):
+def _run_reversal_scan(operation_id: str, params: dict, scan_date=None):
     try:
         op = active_operations[operation_id]
         op["status"] = "running"
@@ -979,7 +996,7 @@ def _run_reversal_scan(operation_id: str, params: dict):
             op["message"] = msg
 
         scanner = ReversalScanner(params)
-        results = scanner.run(progress_callback=progress)
+        results = scanner.run(progress_callback=progress, scan_date=scan_date)
 
         op.update(
             status="completed",

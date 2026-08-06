@@ -34,6 +34,10 @@ export default function ReversalScanner() {
   const [minPrice, setMinPrice] = useState(() => loadFilter("minPrice", 100));
   const [maxPrice, setMaxPrice] = useState(() => loadFilter("maxPrice", 2000));
   const [minDeclinePct, setMinDeclinePct] = useState(() => loadFilter("minDeclinePct", 10));
+  const [scanDate, setScanDate] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("rev_scanDate") || "";
+  });
   const [savedSymbols, setSavedSymbols] = useState<string[]>([]);
   const chartCacheRef = useRef<Record<string, any>>({});
   const { state, setReversalResults, setRevScanProgress, setReversalViewMode } = useAppState();
@@ -53,6 +57,7 @@ export default function ReversalScanner() {
   useEffect(() => { localStorage.setItem("rev_minPrice", String(minPrice)); }, [minPrice]);
   useEffect(() => { localStorage.setItem("rev_maxPrice", String(maxPrice)); }, [maxPrice]);
   useEffect(() => { localStorage.setItem("rev_minDeclinePct", String(minDeclinePct)); }, [minDeclinePct]);
+  useEffect(() => { localStorage.setItem("rev_scanDate", scanDate); }, [scanDate]);
 
   useEffect(() => {
     fetch(`${API}/api/settings`)
@@ -131,7 +136,7 @@ export default function ReversalScanner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: null,
+          date: scanDate || null,
           filters: {
             min_price: minPrice,
             max_price: maxPrice,
@@ -246,6 +251,33 @@ export default function ReversalScanner() {
                 />
               </Box>
             ))}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              <Typography sx={{ color: "#94a3b8", fontSize: "0.8rem", whiteSpace: "nowrap" }}>Scan Date</Typography>
+              <Box
+                component="input"
+                type="date"
+                value={scanDate}
+                onChange={e => setScanDate(e.target.value)}
+                sx={{
+                  width: 150, px: 1.5, py: 0.7, borderRadius: 1.5,
+                  bgcolor: "#1e293b", color: "#f8fafc",
+                  border: "1px solid #334155", outline: "none",
+                  fontSize: "0.85rem", fontFamily: '"SF Mono", "Fira Code", monospace',
+                  transition: "border-color 0.15s",
+                  "&:focus": { borderColor: "#f59e0b" },
+                  "&::-webkit-calendar-picker-indicator": { filter: "invert(0.7)" },
+                }}
+              />
+              {scanDate && (
+                <Box
+                  component="span"
+                  onClick={() => setScanDate("")}
+                  sx={{ cursor: "pointer", color: "#64748b", fontSize: "0.8rem", "&:hover": { color: "#f1f5f9" } }}
+                >
+                  ✕
+                </Box>
+              )}
+            </Box>
             <Box sx={{ flex: 1, minWidth: 40 }} />
             <Button
               variant="contained" disableElevation

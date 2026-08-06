@@ -60,6 +60,7 @@ SEED: list[dict] = [
     {"key": "cont_max_distance_from_high_pct", "value": "5.0", "type": "number", "category": "scanner_continuation", "label": "Max Distance From High (%)", "description": "Max % below recent high", "min": "0.0", "max": "20.0", "step": "0.5"},
     {"key": "cont_min_ma_angle", "value": "0.0", "type": "number", "category": "scanner_continuation", "label": "Min MA Angle", "description": "Minimum SMA angle for continuation", "min": "-10.0", "max": "10.0", "step": "0.5"},
     {"key": "cont_min_data_rows", "value": "50", "type": "number", "category": "scanner_continuation", "label": "Cont Min Data Rows", "description": "Minimum data rows required for continuation scan", "min": "10", "max": "500", "step": "10"},
+    {"key": "cont_rising_ma_tolerance_pct", "value": "0.0", "type": "number", "category": "scanner_continuation", "label": "Rising MA Tolerance (%)", "description": "Max % MA can decline from recent peak and still pass", "min": "0.0", "max": "5.0", "step": "0.1"},
     # ---- Scanner: Reversal ----
     {"key": "rev_decline_days_min", "value": "3", "type": "number", "category": "scanner_reversal", "label": "Decline Days Min", "description": "Min consecutive decline days", "min": "1", "max": "10", "step": "1"},
     {"key": "rev_decline_days_max", "value": "15", "type": "number", "category": "scanner_reversal", "label": "Decline Days Max", "description": "Max consecutive decline days", "min": "1", "max": "20", "step": "1"},

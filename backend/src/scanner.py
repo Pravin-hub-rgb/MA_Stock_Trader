@@ -73,6 +73,11 @@ def _run_chunk(symbols: list, params: dict, scan_date: Optional[date], mode: str
             if scan_date is not None and not _stock_has_date(data, scan_date):
                 continue
 
+            if scan_date is not None:
+                data = data[data.index <= pd.Timestamp(scan_date)]
+                if len(data) < min_rows:
+                    continue
+
             data = compute_all_indicators(data, indicator_params=ind_params)
             latest = data.iloc[-1]
 
@@ -96,8 +101,9 @@ class ContinuationScanner:
     def __init__(self, params: dict):
         self.params = params
 
-    def run(self, progress_callback: Optional[Callable] = None, num_workers: Optional[int] = None) -> list[dict]:
-        scan_date = _detect_scan_date()
+    def run(self, progress_callback: Optional[Callable] = None, num_workers: Optional[int] = None, scan_date: Optional[date] = None) -> list[dict]:
+        if scan_date is None:
+            scan_date = _detect_scan_date()
         symbols = cache_manager.list_symbols()
         total = len(symbols)
         if total == 0:
@@ -168,7 +174,8 @@ class ContinuationScanner:
             df["Near_MA"] = df["Dist_to_MA_pct"] <= NEAR_TH
         df["Above_MA"] = df["close"] > df["SMA20"]
         df["SMA20_prev_max"] = df["SMA20"].shift(1).rolling(rising_ma_window).max()
-        df["Rising_MA"] = df["SMA20"] > df["SMA20_prev_max"]
+        rising_ma_tolerance = self.params.get("rising_ma_tolerance", 0.0) / 100
+        df["Rising_MA"] = df["SMA20"] >= df["SMA20_prev_max"] * (1 - rising_ma_tolerance)
 
         latest = df.iloc[-1]
 
@@ -251,8 +258,9 @@ class ReversalScanner:
     def __init__(self, params: dict):
         self.params = params
 
-    def run(self, progress_callback: Optional[Callable] = None, num_workers: Optional[int] = None) -> list[dict]:
-        scan_date = _detect_scan_date()
+    def run(self, progress_callback: Optional[Callable] = None, num_workers: Optional[int] = None, scan_date: Optional[date] = None) -> list[dict]:
+        if scan_date is None:
+            scan_date = _detect_scan_date()
         symbols = cache_manager.list_symbols()
         total = len(symbols)
         if total == 0:
@@ -404,6 +412,7 @@ def get_default_params() -> dict:
         "cont_lookback_days": int(s.get("cont_lookback_days", 80)),
         "sma_period": int(s.get("sma_period", 20)),
         "rising_ma_prev_max_window": int(s.get("rising_ma_prev_max_window", 5)),
+        "rising_ma_tolerance": float(s.get("cont_rising_ma_tolerance_pct", 0.0)),
         "adr_period": int(s.get("adr_period", 14)),
         "cont_min_data_rows": int(s.get("cont_min_data_rows", 50)),
         "ma_angle_points": int(s.get("ma_angle_points", 5)),

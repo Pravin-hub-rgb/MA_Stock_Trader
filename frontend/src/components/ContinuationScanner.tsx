@@ -34,6 +34,11 @@ export default function ContinuationScanner() {
   const [nearMa, setNearMa] = useState(() => loadFilter("nearMa", 5));
   const [nearMaDirection, setNearMaDirection] = useState(() => { if (typeof window === "undefined") return "above"; return localStorage.getItem("cont_nearMaDirection") || "above"; });
   const [maxBody, setMaxBody] = useState(() => loadFilter("maxBody", 5));
+  const [scanDate, setScanDate] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("cont_scanDate") || "";
+  });
+  const [risingMaTol, setRisingMaTol] = useState(() => loadFilter("risingMaTol", 0));
   const { state, setContinuationResults, setContScanProgress, setContinuationViewMode } = useAppState();
   const { contScanProgress: { scanning, progress, status, operationId } } = state;
   const [sortKey, setSortKey] = useState<keyof (typeof state.continuationResults)[number]>("depth_pct");
@@ -55,6 +60,8 @@ export default function ContinuationScanner() {
   useEffect(() => { localStorage.setItem("cont_nearMa", String(nearMa)); }, [nearMa]);
   useEffect(() => { localStorage.setItem("cont_nearMaDirection", nearMaDirection); }, [nearMaDirection]);
   useEffect(() => { localStorage.setItem("cont_maxBody", String(maxBody)); }, [maxBody]);
+  useEffect(() => { localStorage.setItem("cont_scanDate", scanDate); }, [scanDate]);
+  useEffect(() => { localStorage.setItem("cont_risingMaTol", String(risingMaTol)); }, [risingMaTol]);
 
   useEffect(() => {
     fetch(`${API}/api/settings`)
@@ -137,13 +144,14 @@ export default function ContinuationScanner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: null,
+          date: scanDate || null,
           filters: {
             min_price: minPrice,
             max_price: maxPrice,
             near_ma_threshold: nearMa,
             near_ma_direction: nearMaDirection,
             max_body_percentage: maxBody,
+            rising_ma_tolerance: risingMaTol,
           },
         }),
       });
@@ -232,6 +240,7 @@ export default function ContinuationScanner() {
               { label: "Max Price", val: maxPrice, set: setMaxPrice, min: 100, max: 10000 },
               { label: "Near MA %", val: nearMa, set: setNearMa, min: 1, max: 20 },
               { label: "Max Body %", val: maxBody, set: setMaxBody, min: 1, max: 10 },
+              { label: "Rising MA Tol %", val: risingMaTol, set: setRisingMaTol, min: 0, max: 5 },
             ].map(f => (
               <Box key={f.label} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
                 <Typography sx={{ color: "#94a3b8", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
@@ -274,6 +283,33 @@ export default function ContinuationScanner() {
                 <option value="below">Below</option>
                 <option value="both">Both</option>
               </Box>
+            </Box>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              <Typography sx={{ color: "#94a3b8", fontSize: "0.8rem", whiteSpace: "nowrap" }}>Scan Date</Typography>
+              <Box
+                component="input"
+                type="date"
+                value={scanDate}
+                onChange={e => setScanDate(e.target.value)}
+                sx={{
+                  width: 150, px: 1.5, py: 0.7, borderRadius: 1.5,
+                  bgcolor: "#1e293b", color: "#f8fafc",
+                  border: "1px solid #334155", outline: "none",
+                  fontSize: "0.85rem", fontFamily: '"SF Mono", "Fira Code", monospace',
+                  transition: "border-color 0.15s",
+                  "&:focus": { borderColor: "#6366f1" },
+                  "&::-webkit-calendar-picker-indicator": { filter: "invert(0.7)" },
+                }}
+              />
+              {scanDate && (
+                <Box
+                  component="span"
+                  onClick={() => setScanDate("")}
+                  sx={{ cursor: "pointer", color: "#64748b", fontSize: "0.8rem", "&:hover": { color: "#f1f5f9" } }}
+                >
+                  ✕
+                </Box>
+              )}
             </Box>
             <Box sx={{ flex: 1, minWidth: 40 }} />
             <Button
