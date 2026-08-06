@@ -268,10 +268,13 @@ export class LiveTraderOrchestrator {
       if (selResult.notSelected.length > 0) {
         for (const key of selResult.notSelected) {
           const stock = this.reversalMonitor?.stocks.get(key);
-          if (stock) { stock.rejectionReason = "Not selected (max positions filled)"; this.log(`${stock.symbol}: Not selected - max positions filled`); }
+          if (stock) { this.log(`${stock.symbol}: On standby - will fill an open slot if a selected position is not entered`); }
         }
-        this.reversalIntegration?.subscriptionManager.safeUnsubscribe(selResult.notSelected, "not_selected");
-        this.reversalIntegration?.subscriptionManager.markStocksUnsubscribed(selResult.notSelected);
+        // Do NOT reject/unsubscribe standby candidates here. The real cap is
+        // enforced dynamically at entry time in checkAndUnsubscribeAfterPositionsFilled
+        // (integration.ts), which only fires once enteredCount >= maxPositions.
+        // Pre-emptively killing backups based on rank (before any position is
+        // filled) left slots empty and showed a false "max positions filled".
       }
       this.reversalIntegration?.subscriptionManager.markSelected(selResult.selected);
     }
