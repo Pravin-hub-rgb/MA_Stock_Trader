@@ -11,6 +11,7 @@
         "@mui/material": "^9.1.0",
         "@mui/material-nextjs": "^9.1.1",
         "lightweight-charts": "^5.2.0",
+        "lightweight-charts-drawing": "^0.1.1",
         "next": "16.2.7",
         "ogl": "^1.0.11",
         "protobufjs": "^8.6.1",
@@ -792,6 +793,8 @@
     "lightningcss-win32-x64-msvc": ["lightningcss-win32-x64-msvc@1.32.0", "", { "os": "win32", "cpu": "x64" }, "sha512-Amq9B/SoZYdDi1kFrojnoqPLxYhQ4Wo5XiL8EVJrVsB8ARoC1PWW6VGtT0WKCemjy8aC+louJnjS7U18x3b06Q=="],
 
     "lightweight-charts": ["lightweight-charts@5.2.0", "", { "dependencies": { "fancy-canvas": "2.1.0" } }, "sha512-ey3Vas8UhV06ni+LT9TA1nEe4y8So4Mi6CL/oarNHFMyTktz/xy8e8+oh04Q//eO3t6etvFXgayz2fClyFQb5w=="],
+
+    "lightweight-charts-drawing": ["lightweight-charts-drawing@0.1.1", "", { "dependencies": { "fancy-canvas": "^2.1.0" }, "peerDependencies": { "lightweight-charts": "^5.0.0" } }, "sha512-lS5s94QnMA6mkXAbOCdLdux1rgzdlJn5vIxQSBNj+1pFtuMHaAlV+ciElSI0wNTzLNM1LQo8JN7j83GpApTcgQ=="],
 
     "lines-and-columns": ["lines-and-columns@1.2.4", "", {}, "sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg=="],
 

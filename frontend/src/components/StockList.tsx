@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Box, Typography, Card, CardContent, Button, IconButton, Tooltip, Chip, Grid,
+  Box, Typography, Tabs, Tab, IconButton, Tooltip, Button,
 } from "@mui/material";
 import {
   Delete as DeleteIcon,
@@ -10,6 +10,7 @@ import {
   TrendingUp as UpIcon,
   TrendingDown as DownIcon,
 } from "@mui/icons-material";
+import StockChart from "./scanner/StockChart";
 import ToastNotification from "./ToastNotification";
 
 const API = "http://127.0.0.1:8001";
@@ -20,9 +21,21 @@ interface StockItem {
   depth_pct: number | null; added_at: string;
 }
 
+interface CandleData {
+  candles: { date: string; open: number; high: number; low: number; close: number; volume: number }[];
+  sma: { date: string; value: number }[];
+}
+
+type ListType = "continuation" | "reversal";
+
 export default function StockList() {
   const [contStocks, setContStocks] = useState<StockItem[]>([]);
   const [revStocks, setRevStocks] = useState<StockItem[]>([]);
+  const [activeTab, setActiveTab] = useState<ListType>("continuation");
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [chartData, setChartData] = useState<Record<string, CandleData>>({});
+  const [loaded, setLoaded] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
   const [toasts, setToasts] = useState<{ id: string; message: string; type: "success" | "error" | "warning"; position: number }[]>([]);
   const removeToast = useCallback((id: string) => setToasts(prev => prev.filter(t => t.id !== id)), []);
   const showToast = useCallback((message: string, type: "success" | "error" | "warning") => {
@@ -30,6 +43,10 @@ export default function StockList() {
     setToasts(prev => [...prev, { id, message, type, position: prev.length }]);
     setTimeout(() => removeToast(id), 4000);
   }, [removeToast]);
+
+  const stocks = activeTab === "continuation" ? contStocks : revStocks;
+  const selected = stocks[selectedIdx];
+  const tabColor = activeTab === "continuation" ? "#10b981" : "#f59e0b";
 
   const fetchLists = useCallback(async () => {
     try {
@@ -42,13 +59,59 @@ export default function StockList() {
     } catch {
       showToast("Failed to load stock lists", "error");
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => { fetchLists(); }, [fetchLists]);
 
-  const removeStock = async (listType: string, symbol: string) => {
+  useEffect(() => {
+    setSelectedIdx(0);
+    if (stocks.length === 0) {
+      setChartData({});
+      setLoaded(true);
+      return;
+    }
+    const symbols = stocks.map(s => s.symbol);
+    setLoaded(false);
+    setChartData({});
+    fetch(`${API}/api/data/batch-stock-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols, days: 200 }),
+    })
+      .then(r => r.json())
+      .then(d => setChartData(d.data || {}))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, [stocks, activeTab]);
+
+  const current = selected ? chartData[selected.symbol] : null;
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    const len = Math.max(1, stocks.length);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIdx(prev => (prev + 1) % len);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIdx(prev => (prev - 1 + len) % len);
+    }
+  }, [stocks.length]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  useEffect(() => {
+    if (listRef.current) {
+      const el = listRef.current.children[selectedIdx] as HTMLElement;
+      if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedIdx]);
+
+  const removeStock = async (symbol: string) => {
     try {
-      await fetch(`${API}/api/stock-list/${listType}/${symbol}`, { method: "DELETE" });
+      await fetch(`${API}/api/stock-list/${activeTab}/${symbol}`, { method: "DELETE" });
       await fetchLists();
       showToast(`Removed ${symbol}`, "success");
     } catch {
@@ -56,163 +119,16 @@ export default function StockList() {
     }
   };
 
-  const clearList = async (listType: string) => {
+  const clearList = async () => {
     try {
-      const r = await fetch(`${API}/api/stock-list/${listType}`, { method: "DELETE" });
+      const r = await fetch(`${API}/api/stock-list/${activeTab}`, { method: "DELETE" });
       const d = await r.json();
       await fetchLists();
       showToast(`Cleared ${d.count} stocks`, "success");
     } catch {
-      showToast(`Failed to clear ${listType} list`, "error");
+      showToast(`Failed to clear ${activeTab} list`, "error");
     }
   };
-
-  const cardSx = (color: string) => ({
-    background: "linear-gradient(135deg, #111111 0%, #1a1a1a 100%)",
-    border: "1px solid rgba(255,255,255,0.06)",
-    borderLeft: `3px solid ${color}`,
-    borderRadius: 2,
-    height: "100%",
-    display: "flex",
-    flexDirection: "column" as const,
-  });
-
-  const StockCard = ({ title, icon, color, stocks, listType, emptyMsg }: any) => (
-    <Card sx={cardSx(color)}>
-      <CardContent sx={{ p: 0, display: "flex", flexDirection: "column", height: "100%" }}>
-        <Box sx={{
-          px: 2, py: 1.5,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            {icon}
-            <Typography sx={{ fontWeight: 600, color: "#f8fafc", fontSize: "0.95rem" }}>
-              {title}
-            </Typography>
-            <Chip
-              label={stocks.length.toString()}
-              size="small"
-              sx={{
-                bgcolor: `${color}20`, color, fontWeight: 700,
-                border: `1px solid ${color}40`, height: 20, fontSize: "0.7rem",
-                minWidth: 28, "& .MuiChip-label": { px: 0.5 },
-              }}
-            />
-          </Box>
-        </Box>
-
-        <Box sx={{ height: 2, bgcolor: `${color}15`, mx: 2, mb: 0.5 }} />
-
-        {stocks.length === 0 ? (
-          <Box sx={{ p: 3, textAlign: "center", flex: 1 }}>
-            <Typography sx={{ color: "#475569", fontSize: "0.85rem" }}>
-              {emptyMsg}
-            </Typography>
-          </Box>
-        ) : (
-          <Box sx={{ overflow: "auto", flex: 1 }}>
-            {stocks.map((stock: StockItem, i: number) => (
-              <Box key={stock.id} sx={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                px: 2, py: 1.15,
-                borderBottom: i < stocks.length - 1 ? "1px solid rgba(255,255,255,0.03)" : "none",
-                transition: "all 0.15s ease",
-                "&:hover": {
-                  bgcolor: "rgba(255,255,255,0.015)",
-                  "& .delete-btn": { opacity: 1 },
-                },
-              }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flex: 1, minWidth: 0 }}>
-                  <Typography sx={{
-                    color: "#f1f5f9", fontWeight: 600, fontSize: "0.875rem",
-                    fontFamily: '"SF Mono", "Fira Code", monospace',
-                    minWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
-                  }}>
-                    {stock.symbol}
-                  </Typography>
-                  <Typography sx={{
-                    color: "#94a3b8", fontSize: "0.8rem",
-                    fontFamily: '"SF Mono", "Fira Code", monospace',
-                    minWidth: 65,
-                  }}>
-                    ₹{stock.close?.toFixed(2) ?? "—"}
-                  </Typography>
-                  {listType === "continuation" && stock.depth_pct != null && (
-                    <Typography sx={{
-                      color: "#64748b", fontSize: "0.75rem",
-                      fontFamily: '"SF Mono", "Fira Code", monospace',
-                    }}>
-                      {stock.depth_pct.toFixed(1)}%
-                    </Typography>
-                  )}
-                  {listType === "reversal" && (
-                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                      {stock.trend_context && (
-                        <Typography sx={{
-                          color: "#f59e0b", fontSize: "0.7rem", fontWeight: 500,
-                          letterSpacing: "0.02em",
-                        }}>
-                          {stock.trend_context}
-                        </Typography>
-                      )}
-                      {stock.period != null && (
-                        <Typography sx={{
-                          color: "#64748b", fontSize: "0.75rem",
-                          fontFamily: '"SF Mono", "Fira Code", monospace',
-                        }}>
-                          {stock.period}d
-                        </Typography>
-                      )}
-                    </Box>
-                  )}
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Typography sx={{
-                    color: "#c2c2c2", fontSize: "0.65rem", whiteSpace: "nowrap",
-                  }}>
-                    {stock.added_at ? new Date(stock.added_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : ""}
-                  </Typography>
-                  <Tooltip title={`Remove ${stock.symbol}`}>
-                    <IconButton
-                      className="delete-btn"
-                      size="small"
-                      onClick={() => removeStock(listType, stock.symbol)}
-                      sx={{
-                        color: "#475569", opacity: 0, transition: "opacity 0.15s ease",
-                        p: 0.3, "&:hover": { color: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" },
-                      }}
-                    >
-                      <DeleteIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-              </Box>
-            ))}
-          </Box>
-        )}
-
-        {stocks.length > 0 && (
-          <Box sx={{
-            px: 2, py: 0.75,
-            borderTop: "1px solid rgba(255,255,255,0.04)",
-            display: "flex", justifyContent: "flex-end",
-          }}>
-            <Button
-              size="small" disabled={stocks.length === 0}
-              onClick={() => clearList(listType)}
-              sx={{
-                color: "#999999", fontSize: "0.7rem", textTransform: "none",
-                fontWeight: 500, minWidth: 0, p: 0.5,
-                "&:hover": { color: "#ef4444", bgcolor: "transparent" },
-              }}
-            >
-              Clear all
-            </Button>
-          </Box>
-        )}
-      </CardContent>
-    </Card>
-  );
 
   return (
     <Box>
@@ -222,28 +138,214 @@ export default function StockList() {
         </Box>
       ))}
 
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 7 }}>
-          <StockCard
-            title="Continuation"
-            icon={<UpIcon sx={{ color: "#10b981", fontSize: 18 }} />}
-            color="#10b981"
-            stocks={contStocks}
-            listType="continuation"
-            emptyMsg="No continuation stocks saved. Run a scan and tap + to add."
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 5 }}>
-          <StockCard
-            title="Reversal"
-            icon={<DownIcon sx={{ color: "#f59e0b", fontSize: 18 }} />}
-            color="#f59e0b"
-            stocks={revStocks}
-            listType="reversal"
-            emptyMsg="No reversal stocks saved. Run a scan and tap + to add."
-          />
-        </Grid>
-      </Grid>
+      <Box sx={{ display: "flex", gap: 2, height: 720 }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {stocks.length === 0 ? (
+            <Box sx={{ color: "#64748b", fontSize: "0.85rem", py: 8, textAlign: "center" }}>
+              {activeTab === "continuation"
+                ? "No continuation stocks saved. Run a scan and tap + to add."
+                : "No reversal stocks saved. Run a scan and tap + to add."}
+            </Box>
+          ) : !loaded ? (
+            <Box sx={{ color: "#64748b", fontSize: "0.85rem", py: 4, textAlign: "center" }}>
+              Loading chart data...
+            </Box>
+          ) : current && current.candles.length > 0 ? (
+            <>
+              <StockChart symbol={selected.symbol} candles={current.candles} sma={current.sma} height={660} />
+              <Box sx={{ px: 1, display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                <MiniStat label="Close" value={`₹${(selected.close ?? 0).toFixed(2)}`} />
+                {activeTab === "reversal" ? (
+                  <>
+                    {selected.trend_context && (
+                      <MiniStat label="Trend" value={selected.trend_context}
+                        color={selected.trend_context === "uptrend" ? "#10b981" : "#f59e0b"} />
+                    )}
+                    {selected.period != null && (
+                      <MiniStat label="Period" value={`${selected.period}d`} />
+                    )}
+                  </>
+                ) : (
+                  selected.depth_pct != null && (
+                    <MiniStat label="Depth" value={`${selected.depth_pct.toFixed(1)}%`} />
+                  )
+                )}
+                {selected.added_at && (
+                  <MiniStat label="Added"
+                    value={new Date(selected.added_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} />
+                )}
+              </Box>
+            </>
+          ) : (
+            <Box sx={{ color: "#64748b", fontSize: "0.85rem", py: 8, textAlign: "center" }}>
+              No chart data for {selected?.symbol}
+            </Box>
+          )}
+        </Box>
+
+        <Box sx={{
+          width: 300, flexShrink: 0, height: "100%",
+          display: "flex", flexDirection: "column",
+          bgcolor: "#0d1117", border: "1px solid #1e293b", borderRadius: 2,
+          overflow: "hidden",
+        }}>
+          <Box sx={{ px: 1, pt: 1 }}>
+            <Tabs
+              value={activeTab}
+              onChange={(_e, v) => setActiveTab(v as ListType)}
+              sx={{
+                minHeight: 38,
+                "& .MuiTabs-scroller": { height: 38 },
+                "& .MuiTab-root": {
+                  fontSize: "0.78rem", fontWeight: 600, textTransform: "none",
+                  minHeight: 36, py: 0, borderRadius: 1.5,
+                  fontFamily: '"Inter", sans-serif',
+                },
+                "& .MuiTabs-indicator": { display: "none" },
+              }}
+            >
+              <Tab
+                value="continuation"
+                label="Continuation"
+                icon={<UpIcon sx={{ fontSize: 14 }} />}
+                iconPosition="start"
+                sx={{
+                  flex: 1,
+                  bgcolor: activeTab === "continuation" ? "rgba(16,185,129,0.12)" : "transparent",
+                  color: activeTab === "continuation" ? "#10b981 !important" : "#64748b",
+                }}
+              />
+              <Tab
+                value="reversal"
+                label="Reversal"
+                icon={<DownIcon sx={{ fontSize: 14 }} />}
+                iconPosition="start"
+                sx={{
+                  flex: 1,
+                  bgcolor: activeTab === "reversal" ? "rgba(245,158,11,0.12)" : "transparent",
+                  color: activeTab === "reversal" ? "#f59e0b !important" : "#64748b",
+                }}
+              />
+            </Tabs>
+          </Box>
+          <Box sx={{ height: 2, bgcolor: `${tabColor}18`, mx: 1, mb: 0.5 }} />
+
+          <Box
+            ref={listRef}
+            sx={{
+              flex: 1,
+              overflowY: "auto",
+              "&::-webkit-scrollbar": { width: 4 },
+              "&::-webkit-scrollbar-thumb": { bgcolor: "#334155", borderRadius: 2 },
+            }}
+          >
+            {stocks.map((s, i) => {
+              const isSelected = i === selectedIdx;
+              return (
+                <Box
+                  key={s.id}
+                  onClick={() => setSelectedIdx(i)}
+                  sx={{
+                    px: 1.5, py: 1,
+                    cursor: "pointer",
+                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    bgcolor: isSelected ? "rgba(99,102,241,0.12)" : "transparent",
+                    borderLeft: isSelected ? "3px solid #6366f1" : "3px solid transparent",
+                    transition: "all 0.15s",
+                    "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <Typography sx={{
+                      flex: 1, color: isSelected ? "#f1f5f9" : "#94a3b8",
+                      fontWeight: isSelected ? 700 : 500, fontSize: "0.85rem",
+                      fontFamily: '"SF Mono", "Fira Code", monospace',
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {s.symbol}
+                    </Typography>
+                    <Typography sx={{ color: "#cbd5e1", fontSize: "0.75rem", fontFamily: '"SF Mono", "Fira Code", monospace' }}>
+                      ₹{s.close?.toFixed(2) ?? "—"}
+                    </Typography>
+                    <Tooltip title={`Remove ${s.symbol}`} placement="left">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => { e.stopPropagation(); removeStock(s.symbol); }}
+                        sx={{ color: "#64748b", p: 0.3, "&:hover": { color: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" } }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ display: "flex", gap: 1.5, pl: 0.5, mt: 0.3 }}>
+                    {activeTab === "reversal" ? (
+                      <>
+                        {s.trend_context && (
+                          <Typography sx={{
+                            color: s.trend_context === "uptrend" ? "#10b981" : "#f59e0b",
+                            fontSize: "0.68rem", fontWeight: 600, letterSpacing: "0.02em",
+                          }}>
+                            {s.trend_context}
+                          </Typography>
+                        )}
+                        {s.period != null && (
+                          <Typography sx={{ color: "#64748b", fontSize: "0.72rem", fontFamily: '"SF Mono", "Fira Code", monospace' }}>
+                            {s.period}d
+                          </Typography>
+                        )}
+                      </>
+                    ) : (
+                      s.depth_pct != null && (
+                        <Typography sx={{ color: "#64748b", fontSize: "0.72rem", fontFamily: '"SF Mono", "Fira Code", monospace' }}>
+                          {s.depth_pct.toFixed(1)}%
+                        </Typography>
+                      )
+                    )}
+                    <Typography sx={{ color: "#475569", fontSize: "0.65rem", whiteSpace: "nowrap" }}>
+                      {s.added_at ? new Date(s.added_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : ""}
+                    </Typography>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+
+          {stocks.length > 0 && (
+            <Box sx={{
+              px: 1.5, py: 0.75,
+              borderTop: "1px solid rgba(255,255,255,0.04)",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              <Typography sx={{ color: "#64748b", fontSize: "0.7rem", fontFamily: '"SF Mono", "Fira Code", monospace' }}>
+                {stocks.length} stocks
+              </Typography>
+              <Button
+                size="small"
+                onClick={clearList}
+                startIcon={<ClearIcon sx={{ fontSize: 14 }} />}
+                sx={{
+                  color: "#999999", fontSize: "0.7rem", textTransform: "none",
+                  fontWeight: 500, minWidth: 0, p: 0.5,
+                  "&:hover": { color: "#ef4444", bgcolor: "transparent" },
+                }}
+              >
+                Clear all
+              </Button>
+            </Box>
+          )}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function MiniStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <Typography sx={{ color: "#64748b", fontSize: "0.7rem" }}>{label}</Typography>
+      <Typography sx={{ color: color ?? "#e2e8f0", fontSize: "0.75rem", fontWeight: 600 }}>
+        {value}
+      </Typography>
     </Box>
   );
 }
